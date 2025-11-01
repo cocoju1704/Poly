@@ -1,4 +1,3 @@
-import requests
 from bs4 import BeautifulSoup
 import json
 from typing import Optional
@@ -88,14 +87,34 @@ class LLMStructuredCrawler(BaseCrawler):
             print(f"파일 읽기 실패: {e}")
             return None
 
-    def _extract_text_content(self, soup: BeautifulSoup) -> str:
-        """HTML에서 주요 텍스트 내용 추출 (내부 헬퍼)"""
+    def _extract_text_content(
+        self, soup: BeautifulSoup, max_chars: int = 200000
+    ) -> str:
+        """
+        HTML에서 주요 텍스트 내용 추출 (내부 헬퍼)
+
+        Args:
+            soup: BeautifulSoup 객체
+            max_chars: 최대 문자 수 (기본값: 200,000자 = 약 50,000 토큰)
+
+        Returns:
+            추출된 텍스트 (길이 제한 적용)
+        """
         # 텍스트 추출
         text = soup.get_text(separator="\n", strip=True)
 
         # 빈 줄 제거 및 정리
         lines = [line.strip() for line in text.split("\n") if line.strip()]
         cleaned_text = "\n".join(lines)
+
+        # 길이 제한 적용
+        if len(cleaned_text) > max_chars:
+            print(
+                f"    ⚠️ 텍스트가 너무 깁니다 ({len(cleaned_text):,}자). {max_chars:,}자로 잘라냅니다."
+            )
+            cleaned_text = (
+                cleaned_text[:max_chars] + "\n\n[... 텍스트가 잘렸습니다 ...]"
+            )
 
         return cleaned_text
 

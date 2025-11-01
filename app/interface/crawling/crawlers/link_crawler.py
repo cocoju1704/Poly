@@ -88,7 +88,14 @@ def main():
         # ⭐ 활성화된 규칙(active_rule)의 'sub_selector'를 사용
         found_sub_links = False
 
-        for finder_selector in active_rule["policy_finders"]:
+        # sub_selector가 문자열이면 리스트로 변환
+        sub_selectors = active_rule.get("sub_selector", [])
+        if isinstance(sub_selectors, str):
+            sub_selectors = [sub_selectors]
+        elif sub_selectors is None:
+            sub_selectors = []
+
+        for finder_selector in sub_selectors:
             sub_links = category_soup.select(finder_selector)
 
             if sub_links:

@@ -47,7 +47,10 @@ CRAWL_RULES = [
         "name": "강북구 보건소 LNB",
         "domain": "gangbuk",
         "main_selector": ".lnb nav > ul > li > a",
-        "sub_selector": ".lnb nav > ul > li.on > ul > li > a",
+        "sub_selector": [
+            ".lnb nav ul li.on ul li a",
+            ".tab-nav ul li a",
+        ],
     },
     {
         "name": "강서구 보건소 LNB",
@@ -55,26 +58,30 @@ CRAWL_RULES = [
         "single_page": True,
         "menu_container": ".lnb-wrap",
         "main_selector": ".lnb-menu > li > a",
-        "sub_selector": "ul > li > a",
+        "sub_selector": [
+            "ul li a",
+            ".content-body ul li a",
+        ],
     },
     {
         "name": "관악구 보건소 LNB",
         "domain": "gwanak",
-        "filter_menu": "사업안내",
-        "main_selector": "#snav nav > .dep1 > li > a",
-        "sub_selector": "#snav .dep1 > li.on .dep2 > li > a",
+        "single_page": True,
+        "menu_container": "#snav nav",
+        "main_selector": ".dep1 > li > a",
+        "sub_selector": [
+            ".dep2 > li > a",
+            ".dep3 > li > a",
+        ],
     },
     {
         "name": "광진구 보건소 LNB",
         "domain": "gwangjin",
         "main_selector": "nav.lnb > ul > li > a",
-        "sub_selector": "nav.lnb > ul > li.on > div > ul > li > a",
-    },
-    {
-        "name": "노원구 보건소 LNB",
-        "domain": "nowon",
-        "main_selector": ".sidebar-inner > ul > li > a",
-        "sub_selector": ".sidebar-inner > ul > li.active > ul > li > a",
+        "sub_selector": [
+            "nav.lnb ul li.on div ul li a",
+            ".tab-list .item a",
+        ],
     },
     {
         "name": "종로구 보건소 LNB",
@@ -88,13 +95,102 @@ CRAWL_RULES = [
         "name": "용산구 보건소 LNB",
         "domain": "yongsan",
         "main_selector": "nav.lnb a",
-        "sub_selector": "null",
+        "sub_selector": None,
     },
     {
         "name": "중구 보건소 LNB",
         "domain": "junggu",
         "main_selector": "div.lnb_area a[href!='#none']",
-        "sub_selector": "null",
+        "sub_selector": None,
+    },
+    {
+        "name": "구로구 보건소 LNB",
+        "domain": "guro",
+        "single_page": True,
+        "menu_container": ".side_menu nav.menu",
+        "main_selector": ".depth2_list > .depth2_item > a.depth2_text",
+        "sub_selector": ".depth3_list > .depth3_item > a.depth3_text",
+    },
+    {
+        "name": "도봉구 보건소 LNB",
+        "domain": "dobong",
+        "single_page": True,
+        "main_selector": "ul.depth1 > li > a",
+        "sub_selector": "ul.depth2 > li > a",
+    },
+    {
+        "name": "동대문구 보건소 LNB",
+        "domain": "ddm",
+        "single_page": True,
+        "filter_menu": "보건사업",
+        "menu_container": ".side_menu nav.menu",
+        "main_selector": ".depth2_list > .depth2_item > a.depth2_text",
+        "sub_selector": ".depth3_list > .depth3_item > a.depth3_text",
+    },
+    {
+        "name": "마포구 보건소 LNB",
+        "domain": "mapo",
+        "single_page": True,
+        "filter_menu": "사업안내",
+        "menu_container": ".depth1 .depth1_list",
+        "main_selector": ".depth2_item > a.depth2_text",
+        "sub_selector": ".depth3_item > a.depth3_text",
+    },
+    {
+        "name": "서대문구 보건소 LNB",
+        "domain": "sdm",
+        "single_page": True,
+        "main_selector": "ul.depth03 > li > a",
+        "sub_selector": None,
+    },
+    {
+        "name": "서초구 보건소 LNB",
+        "domain": "seocho",
+        "single_page": True,
+        "menu_container": "#snav nav",
+        "main_selector": "ul.dep2 > li > a",
+        "sub_selector": "ul.dep3 > li > a",
+    },
+    {
+        "name": "성동구 보건소 LNB",
+        "domain": "sd",
+        "single_page": True,
+        "main_selector": ".depth1_item.n4 .depth2_list > .depth2_item > a.depth2_text",
+        "sub_selector": ".depth1_item.n4 .depth3_list > .depth3_item > a.depth3_text",
+    },
+    {
+        "name": "성북구 보건소 LNB",
+        "domain": "sb",
+        "single_page": True,
+        "filter_menu": "사업안내",
+        "menu_container": ".side_menu nav.menu",
+        "main_selector": ".depth1_list > .depth1_item > a.depth1_text",
+        "sub_selector": ".depth2_list > .depth2_item > a.depth2_text",
+    },
+    {
+        "name": "송파구 보건소 LNB",
+        "domain": "songpa",
+        "single_page": True,
+        "filter_menu": "보건사업",
+        "menu_container": "nav.menu",
+        "main_selector": ".depth2_list > .depth2_item > a.depth2_text",
+        "sub_selector": ".depth3_list > .depth3_item > a.depth3_text",
+    },
+    {
+        "name": "양천구 보건소 LNB",
+        "domain": "yangcheon",
+        "single_page": True,
+        "menu_container": "#leftmenu",
+        "main_selector": "#sub_menu .dep1 > a",
+        "sub_selector": ".dep2 a",
+    },
+    {
+        "name": "영등포구 보건소 LNB (수정)",
+        "domain": "ydp",
+        "single_page": True,
+        "menu_container": "#side",
+        "main_selector": ".side_menu li:not(.has) a",
+        "sub_selector": None,
     },
 ]
 
@@ -105,15 +201,18 @@ CRAWL_RULES = [
 TAB_SELECTORS = [
     ".tabmenu ul li a",  # 강남구 등
     ".tab-list li a",  # 동작구
+    ".tab-nav ul li a",  # 강북구
+    "ul.tab-wrap li a",  # 강서구
+    ".tab-list .item a",  # 광진구
+    ".tab1 ul li a",  # 도봉구
+    "ul.sub-tab li a",  # 서대문구
     ".nw-tab-bx .nw-tab-ls > li > p > a",  # 추가 탭 패턴
 ]
 
 # ========================================
 # HTTP 설정
 # ========================================
-DEFAULT_USER_AGENT = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-)
+DEFAULT_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
 DEFAULT_TIMEOUT = 15  # 초
 DEFAULT_DELAY = 1  # 요청 간 지연 시간 (초)
 RATE_LIMIT_DELAY = 0.5  # Rate limiting 지연 시간 (초)
@@ -131,6 +230,10 @@ SITE_SPECIFIC_CONFIGS = {
         "verify_ssl": True,
     },
     "gangseo": {
+        "verify_ssl": False,
+        "disable_ssl_warnings": True,
+    },
+    "yangcheon": {
         "verify_ssl": False,
         "disable_ssl_warnings": True,
     },

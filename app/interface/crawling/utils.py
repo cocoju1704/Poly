@@ -2,8 +2,7 @@
 크롤러 공통 유틸리티 함수
 """
 
-from urllib.parse import urlparse, urljoin
-from typing import Optional
+from urllib.parse import urlparse, urljoin, parse_qs
 
 
 def extract_region_from_url(url: str) -> str:
@@ -24,11 +23,21 @@ def extract_region_from_url(url: str) -> str:
         "guro": "구로구",
         "gwanak": "관악구",
         "dongjak": "동작구",
+        "ddm": "동대문구",
         "gwangjin": "광진구",
         "nowon": "노원구",
         "jongno": "종로구",
         "yongsan": "용산구",
         "junggu": "중구",
+        "dobong": "도봉구",
+        "mapo": "마포구",
+        "sdm": "서대문구",
+        "seocho": "서초구",
+        "sd": "성동구",
+        "sb": "성북구",
+        "songpa": "송파구",
+        "yangcheon": "양천구",
+        "ydp": "영등포구",
     }
 
     parsed = urlparse(url)
@@ -60,6 +69,38 @@ def get_base_url(url: str) -> str:
         raise ValueError(f"유효하지 않은 URL: {url}")
 
     return f"{parsed.scheme}://{parsed.netloc}"
+
+
+def are_urls_equivalent(url1: str, url2: str) -> bool:
+    """
+    두 URL이 실질적으로 동일한지 비교 (정규화 후 비교)
+    - scheme, netloc, path, query parameter를 모두 고려
+    - fragment(#)는 무시
+    """
+    if not url1 or not url2:
+        return False
+    try:
+        p1 = urlparse(url1)
+        p2 = urlparse(url2)
+
+        # scheme, netloc, path (trailing slash 무시) 비교
+        if (
+            p1.scheme.lower() != p2.scheme.lower()
+            or p1.netloc.lower() != p2.netloc.lower()
+            or p1.path.rstrip("/") != p2.path.rstrip("/")
+        ):
+            return False
+
+        # Query parameter 순서와 상관없이 비교
+        qs1 = parse_qs(p1.query)
+        qs2 = parse_qs(p2.query)
+        return qs1 == qs2
+        # fragment는 비교하지 않음 (p1.fragment, p2.fragment 무시)
+    except Exception:
+        # 파싱 오류 발생 시, 기본적인 문자열 비교로 대체 (fragment 제거)
+        cleaned_url1 = url1.split("#")[0].rstrip("/").lower()
+        cleaned_url2 = url2.split("#")[0].rstrip("/").lower()
+        return cleaned_url1 == cleaned_url2
 
 
 def make_absolute_url(url: str, base_url: str) -> str:

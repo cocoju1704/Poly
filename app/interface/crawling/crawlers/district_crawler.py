@@ -1,5 +1,5 @@
 """
-워크플로우: 링크 수집 → 크롤링 및 구조화 (탭 처리 포함 - 컨테이너 페이지 저장)
+워크플로우: 링크 수집 -> 크롤링 및 구조화 (탭 처리 포함 - 컨테이너 페이지 저장)
 
 1. 초기 링크 수집: 보건소 사이트의 LNB 등에서 서브 메뉴 링크 수집
 2. 링크 처리 루프:
@@ -13,10 +13,10 @@
 import json
 import os
 from datetime import datetime
-from typing import List, Dict, Set
+from typing import List, Dict
 import requests
 from bs4 import BeautifulSoup
-from urllib.parse import urlparse, urljoin
+from urllib.parse import urljoin
 import time
 
 # 공통 모듈 import
@@ -32,7 +32,9 @@ from base.llm_crawler import LLMStructuredCrawler
 class HealthCareWorkflow(BaseCrawler):
     """보건소 사이트 크롤링 및 구조화 워크플로우 (탭 처리 기능 포함 - 컨테이너 저장)"""
 
-    def __init__(self, output_dir: str = "app/interface/crawling/output", region: str = None):
+    def __init__(
+        self, output_dir: str = "app/interface/crawling/output", region: str = None
+    ):
         """
         Args:
             output_dir: 결과 저장 디렉토리
@@ -47,23 +49,111 @@ class HealthCareWorkflow(BaseCrawler):
         # 출력 디렉토리 생성
         os.makedirs(output_dir, exist_ok=True)
 
+    def _extract_link_from_element(
+        self, link_element, base_url: str, seen_urls: set
+    ) -> dict:
+        """
+        링크 요소에서 URL과 이름을 추출하고 검증
+
+        Args:
+            link_element: BeautifulSoup 링크 요소
+            base_url: 기준 URL
+            seen_urls: 이미 수집된 URL 집합
+
+        Returns:
+            {"name": str, "url": str} 또는 None (무효한 링크인 경우)
+        """
+        name = link_element.get_text(strip=True)
+        href = link_element.get("href", "")
+
+        # 기본 검사
+        if not href:
+            return None
+
+        # 절대 URL로 변환
+        url = urljoin(base_url, href)
+
+        # 중복 확인
+        if url in seen_urls:
+            return None
+
+        return {"name": name, "url": url}
+
+    def _find_tabs_on_page(self, soup: BeautifulSoup, url: str) -> List[Dict]:
+        """
+        페이지에서 탭 메뉴 찾기
+
+        Args:
+            soup: BeautifulSoup 객체
+            url: 현재 페이지 URL
+
+        Returns:
+            탭 링크 목록 [{"name": str, "url": str}, ...]
+        """
+        tab_selectors = config.TAB_SELECTORS
+        tab_links = []
+
+        for tab_selector in tab_selectors:
+            tab_elements = soup.select(tab_selector)
+            if tab_elements:
+                for tab_link_element in tab_elements:
+                    # 탭의 경우 현재 페이지 URL을 base로 사용 (href="#" 처리 위해)
+                    link_info = self._extract_link_from_element(
+                        tab_link_element,
+                        url,  # base_url 대신 전체 URL 사용
+                        set(),  # 중복 검사는 나중에
+                    )
+                    if link_info:
+                        tab_links.append(link_info)
+                if tab_links:
+                    print(
+                        f"    -> 탭 메뉴 발견 ({len(tab_links)}개 항목, 선택자: '{tab_selector}')"
+                    )
+                    break  # 첫 번째로 찾은 선택자 사용
+        return tab_links
+
+    def _determine_page_title(self, name: str, url: str, tab_links: List[Dict]) -> str:
+        """
+        페이지의 정확한 제목 결정 (탭이 있는 경우 매칭)
+
+        Args:
+            name: 기본 제목
+            url: 현재 페이지 URL
+            tab_links: 탭 링크 목록
+
+        Returns:
+            최종 제목
+        """
+        if not tab_links:
+            return name
+
+        # 현재 URL과 일치하는 탭 찾기
+        for tab_info in tab_links:
+            if utils.are_urls_equivalent(tab_info["url"], url):
+                print(
+                    f"    -> 현재 페이지는 '{tab_info['name']}' 탭이므로 제목 업데이트"
+                )
+                return tab_info["name"]
+
+        # URL 매칭 실패 시, 첫 번째 탭을 기본 페이지로 간주
+        if tab_links:
+            print(
+                f"    -> URL 매칭 실패. 첫 번째 탭 '{tab_links[0]['name']}'을 현재 페이지로 간주"
+            )
+            return tab_links[0]["name"]
+
+        return name
+
     def collect_links(self, start_url: str, crawl_rules: List[Dict]) -> List[Dict]:
         """
         초기 링크 목록 수집 (LNB 등 - 이전과 동일한 로직)
         """
         base_url = utils.get_base_url(start_url)
 
-        # 사이트별 특수 처리 (쿠키, SSL) - BaseCrawler에서 처리
-        verify_ssl = self._apply_site_specific_config(start_url)
-
-        try:
-            response = self.session.get(
-                start_url, timeout=config.DEFAULT_TIMEOUT, verify=verify_ssl
-            )
-            response.raise_for_status()
-            soup = BeautifulSoup(response.text, "html.parser")
-        except requests.RequestException as e:
-            print(f"오류: 시작 URL({start_url})에 접근할 수 없습니다: {e}")
+        # 페이지 가져오기 (BaseCrawler의 fetch_page 사용)
+        soup = self.fetch_page(start_url)
+        if not soup:
+            print(f"오류: 시작 URL({start_url})에 접근할 수 없습니다.")
             return []
 
         # 적용할 규칙 찾기
@@ -109,7 +199,7 @@ class HealthCareWorkflow(BaseCrawler):
                     if filter_menu:
                         log_msg += f", filter: '{filter_menu}'"
                     log_msg += ")"
-                    print(f"  ✓ 규칙 적용: {log_msg}")
+                    print(f"  [OK] 규칙 적용: {log_msg}")
                     active_rule = rule
                     break  # 규칙 찾으면 종료
 
@@ -117,7 +207,7 @@ class HealthCareWorkflow(BaseCrawler):
                 main_links_elements = soup.select(rule["main_selector"])
                 if main_links_elements:
                     print(
-                        f"  ✓ 규칙 적용: '{rule['name']}' ({len(main_links_elements)}개 링크 발견)"
+                        f"  [OK] 규칙 적용: '{rule['name']}' ({len(main_links_elements)}개 링크 발견)"
                     )
                     active_rule = rule
                     break
@@ -136,12 +226,25 @@ class HealthCareWorkflow(BaseCrawler):
         if active_rule.get("single_page", False):
             # sub_selector가 있으면 계층 구조로 처리
             if sub_selector := active_rule.get("sub_selector"):
+                # sub_selector가 리스트가 아니면 리스트로 변환
+                if isinstance(sub_selector, str):
+                    sub_selectors = [sub_selector]
+                else:
+                    sub_selectors = sub_selector
+
                 for depth1_element in main_links_elements:
                     # depth1_element 자체가 링크일 수도 있고, 아닐 수도 있음. 유연하게 처리
                     parent_element = (
                         depth1_element.find_parent("li") or depth1_element
                     )  # li가 없으면 자기 자신
-                    sub_link_elements = parent_element.select(sub_selector)
+
+                    # 여러 선택자 시도
+                    sub_link_elements = []
+                    for selector in sub_selectors:
+                        elements = parent_element.select(selector)
+                        if elements:
+                            sub_link_elements.extend(elements)
+                            break  # 첫 번째로 찾은 선택자 사용
 
                     if (
                         not sub_link_elements
@@ -151,38 +254,46 @@ class HealthCareWorkflow(BaseCrawler):
                         else:  # a 태그가 아니면 건너뜀
                             continue
 
+                    # 링크 추출 (헬퍼 메서드 사용)
                     for link_element in sub_link_elements:
-                        name = link_element.get_text(strip=True)
-                        href = link_element.get("href", "")
-                        if href and href != "#" and not href.startswith("javascript:"):
-                            url = urljoin(base_url, href)
-                            if url.startswith(base_url) and url not in seen_urls:
-                                seen_urls.add(url)
-                                collected_links.append({"name": name, "url": url})
+                        link_info = self._extract_link_from_element(
+                            link_element, base_url, seen_urls
+                        )
+                        if link_info:
+                            seen_urls.add(link_info["url"])
+                            collected_links.append(link_info)
             else:  # sub_selector 없으면 main_links_elements가 최종 링크
                 for link_element in main_links_elements:
-                    name = link_element.get_text(strip=True)
-                    href = link_element.get("href", "")
-                    if href and href != "#" and not href.startswith("javascript:"):
-                        url = urljoin(base_url, href)
-                        if url.startswith(base_url) and url not in seen_urls:
-                            seen_urls.add(url)
-                            collected_links.append({"name": name, "url": url})
-            print(f"  ✓ 총 {len(collected_links)}개 링크 수집 (single_page, 중복 제거)")
+                    link_info = self._extract_link_from_element(
+                        link_element, base_url, seen_urls
+                    )
+                    if link_info:
+                        seen_urls.add(link_info["url"])
+                        collected_links.append(link_info)
+            print(
+                f"  [OK] 총 {len(collected_links)}개 링크 수집 (single_page, 중복 제거)"
+            )
 
         # 일반 LNB 모드 링크 처리
         else:
             main_categories = []
+            filter_menu = active_rule.get("filter_menu")  # filter_menu 가져오기
+
+            if filter_menu:
+                print(f"  [INFO] 필터링 적용: '{filter_menu}' 포함 메뉴만 수집")
+
             for link_element in main_links_elements:
                 name = link_element.get_text(strip=True)
-                href = link_element.get("href", "")
-                if href and href != "#" and not href.startswith("javascript:"):
-                    url = urljoin(base_url, href)
-                    # url이 base_url로 시작하는지 다시 한번 확인 (외부 링크 방지)
-                    if url.startswith(base_url):
-                        main_categories.append({"name": name, "url": url})
-                    else:
-                        print(f"    → 외부 링크 건너뜀 (1단계): {url}")
+
+                # filter_menu가 있으면 필터링
+                if filter_menu and filter_menu not in name:
+                    continue
+
+                link_info = self._extract_link_from_element(
+                    link_element, base_url, seen_urls
+                )
+                if link_info:
+                    main_categories.append(link_info)
 
             # 각 카테고리 방문하여 하위 메뉴 수집
             for category in main_categories:
@@ -195,17 +306,12 @@ class HealthCareWorkflow(BaseCrawler):
                 time.sleep(config.RATE_LIMIT_DELAY)  # Rate limiting
 
                 try:
-                    cat_response = self.session.get(
-                        category["url"], timeout=10, verify=verify_ssl
-                    )
-                    cat_response.raise_for_status()
-                    # 인코딩 명시적 설정 (필요시)
-                    cat_response.encoding = (
-                        cat_response.apparent_encoding
-                        if cat_response.apparent_encoding
-                        else "utf-8"
-                    )
-                    cat_soup = BeautifulSoup(cat_response.text, "html.parser")
+                    # fetch_page 사용
+                    cat_soup = self.fetch_page(category["url"])
+                    if not cat_soup:
+                        raise ValueError(
+                            f"페이지를 가져올 수 없습니다: {category['url']}"
+                        )
 
                     sub_link_elements = []
                     sub_selectors = active_rule.get("sub_selector", [])
@@ -221,22 +327,17 @@ class HealthCareWorkflow(BaseCrawler):
                                 found_sub_links = True  # 하나라도 찾으면 True
 
                     if found_sub_links:
-                        print(f"    → 하위 메뉴 {len(sub_link_elements)}개 발견")
+                        print(f"    -> 하위 메뉴 {len(sub_link_elements)}개 발견")
                         for link_element in sub_link_elements:
-                            name = link_element.get_text(strip=True)
-                            href = link_element.get("href", "")
-                            if (
-                                href
-                                and href != "#"
-                                and not href.startswith("javascript:")
-                            ):
-                                url = urljoin(base_url, href)
-                                if url.startswith(base_url) and url not in seen_urls:
-                                    seen_urls.add(url)
-                                    collected_links.append({"name": name, "url": url})
+                            link_info = self._extract_link_from_element(
+                                link_element, base_url, seen_urls
+                            )
+                            if link_info:
+                                seen_urls.add(link_info["url"])
+                                collected_links.append(link_info)
                     else:  # sub_selector가 없거나, 있어도 못 찾은 경우
                         print(
-                            "    → 하위 메뉴 없음 (또는 sub_selector 없음), 카테고리 자체 추가"
+                            "    -> 하위 메뉴 없음 (또는 sub_selector 없음), 카테고리 자체 추가"
                         )
                         url = category["url"]
                         if url not in seen_urls:
@@ -281,7 +382,7 @@ class HealthCareWorkflow(BaseCrawler):
         print("\n[1단계] 초기 링크 수집 중...")
         print("-" * 80)
         initial_links = self.collect_links(start_url, crawl_rules)
-        print(f"\n✅ 총 {len(initial_links)}개의 초기 링크 수집 완료")
+        print(f"\n[SUCCESS] 총 {len(initial_links)}개의 초기 링크 수집 완료")
 
         if not initial_links:
             print("처리할 링크가 없습니다. 워크플로우를 종료합니다.")
@@ -293,7 +394,7 @@ class HealthCareWorkflow(BaseCrawler):
             try:
                 with open(links_file, "w", encoding="utf-8") as f:
                     json.dump(initial_links, f, ensure_ascii=False, indent=2)
-                print(f"📄 초기 링크 목록 저장: {links_file}")
+                print(f"[FILE] 초기 링크 목록 저장: {links_file}")
             except IOError as e:
                 print(f"경고: 초기 링크 파일 저장 실패 - {e}")
 
@@ -304,9 +405,9 @@ class HealthCareWorkflow(BaseCrawler):
         structured_data_list = []
         failed_urls = []
         links_to_process = list(initial_links)  # 처리할 링크 목록 (큐)
-        processed_or_queued_urls: Set[str] = {
+        processed_or_queued_urls: List[str] = [
             link["url"] for link in initial_links
-        }  # 중복 방지 Set
+        ]  # 중복 방지 List
 
         # 탭 메뉴를 찾는 데 사용할 CSS 선택자 목록 (config.py에서 가져오기)
         tab_selectors = config.TAB_SELECTORS
@@ -326,63 +427,47 @@ class HealthCareWorkflow(BaseCrawler):
             time.sleep(1)  # 부하 감소 지연
 
             try:
+                print("    [디버그] >> 처리 시작")
                 # 1. 페이지 가져오기
                 soup = self.crawler.fetch_page(url)
                 if not soup:
                     raise ValueError("페이지 내용을 가져올 수 없습니다.")
 
-                # 2. 탭 메뉴 확인 (탭 처리 로직은 그대로 유지)
-                found_tabs = False
-                tab_links_on_page = []
-                base_url = f"{urlparse(url).scheme}://{urlparse(url).netloc}"  # 현재 페이지 기준 base_url
-                for tab_selector in tab_selectors:
-                    tab_elements = soup.select(tab_selector)
-                    if tab_elements:
-                        for tab_link_element in tab_elements:
-                            tab_name = tab_link_element.get_text(strip=True)
-                            tab_href = tab_link_element.get("href", "")
-                            if (
-                                tab_href
-                                and tab_href != "#"
-                                and not tab_href.startswith("javascript:")
-                            ):
-                                tab_url = urljoin(base_url, tab_href)
-                                # 자기 자신을 가리키는 탭 링크는 제외할 필요 없음 (아래 로직에서 걸러짐)
-                                if tab_url.startswith(base_url):
-                                    tab_links_on_page.append(
-                                        {"name": tab_name, "url": tab_url}
-                                    )
-                        if tab_links_on_page:
-                            found_tabs = True
-                            print(
-                                f"    → 탭 메뉴 발견 ({len(tab_links_on_page)}개 항목, 선택자: '{tab_selector}')"
-                            )
-                            break
+                # 2. 탭 메뉴 확인 (헬퍼 메서드 사용)
+                tab_links_on_page = self._find_tabs_on_page(soup, url)
+                found_tabs = bool(tab_links_on_page)
+
+                # 탭 발견 시 현재 페이지의 정확한 제목 찾기 (헬퍼 메서드 사용)
+                title_for_llm = self._determine_page_title(name, url, tab_links_on_page)
 
                 # ★★★ 3. 현재 페이지 LLM 구조화 (탭 유무와 상관없이 실행) ★★★
-                print("    → 내용 구조화 진행...")
+                print("    -> 내용 구조화 진행...")
                 region = self.region or utils.extract_region_from_url(url)
                 # LLM 호출 시 수집된 name을 title로 명확히 전달
                 structured_data = self.crawler.crawl_and_structure(
                     url=url,  # crawler 내부에서 fetch 또는 soup 처리
                     region=region,
-                    title=name,
+                    title=title_for_llm,
                 )
                 # 결과 리스트에 추가
                 structured_data_list.append(structured_data.model_dump())
-                print("  ✅ 성공")  # 일단 현재 페이지 처리 성공 로그
+                print("  [SUCCESS] 성공")  # 일단 현재 페이지 처리 성공 로그
 
-                # 4. 탭 발견 시, 새로운 탭 링크만 큐에 추가
+                # 4. 탭 발견 시, 새로운 탭 링크만 큐에 추가 (URL 중복 검사 강화)
                 if found_tabs:
                     newly_added_count = 0
                     for tab_link_info in tab_links_on_page:
-                        # ★★★ 현재 URL과 다른 URL이고, 아직 큐에 없거나 처리된 적 없는 URL만 추가 ★★★
-                        if (
-                            tab_link_info["url"] != url
-                            and tab_link_info["url"] not in processed_or_queued_urls
-                        ):
+                        # utils.are_urls_equivalent를 사용하여 이미 큐에 있거나 처리된 URL인지 확인
+                        is_already_processed = any(
+                            utils.are_urls_equivalent(
+                                existing_url, tab_link_info["url"]
+                            )
+                            for existing_url in processed_or_queued_urls
+                        )
+
+                        if not is_already_processed:
                             links_to_process.append(tab_link_info)
-                            processed_or_queued_urls.add(
+                            processed_or_queued_urls.append(
                                 tab_link_info["url"]
                             )  # 큐에 추가되었음을 기록
                             newly_added_count += 1
@@ -391,13 +476,14 @@ class HealthCareWorkflow(BaseCrawler):
                             )
                     if newly_added_count > 0:
                         print(
-                            f"    → 새로운 탭 링크 {newly_added_count}개를 처리 목록에 추가했습니다."
+                            f"    -> 새로운 탭 링크 {newly_added_count}개를 처리 목록에 추가했습니다."
                         )
-                    # else:
-                    # 이미 추가된 링크에 대한 로그는 불필요하므로 제거
+                print("    [디버그] >> 처리 완료")
+            # else:
+            # 이미 추가된 링크에 대한 로그는 불필요하므로 제거
 
             except Exception as e:
-                print(f"  ❌ 실패: {e}")
+                print(f"  [ERROR] 실패: {e}")
                 # 실패 시 상세 정보 기록
                 import traceback
 
@@ -427,7 +513,7 @@ class HealthCareWorkflow(BaseCrawler):
         try:
             with open(output_file, "w", encoding="utf-8") as f:
                 json.dump(structured_data_list, f, ensure_ascii=False, indent=2)
-            print(f"✅ 구조화 데이터 저장: {output_file}")
+            print(f"[SUCCESS] 구조화 데이터 저장: {output_file}")
         except IOError as e:
             print(f"오류: 구조화 데이터 파일 저장 실패 - {e}")
 
@@ -441,7 +527,7 @@ class HealthCareWorkflow(BaseCrawler):
                 with open(failed_file, "w", encoding="utf-8") as f:
                     # 실패 정보에 상세 오류(details) 포함하여 저장
                     json.dump(failed_urls, f, ensure_ascii=False, indent=2)
-                print(f"⚠️  실패한 URL 저장: {failed_file}")
+                print(f"[WARNING]  실패한 URL 저장: {failed_file}")
             except IOError as e:
                 print(f"경고: 실패한 URL 파일 저장 실패 - {e}")
 
@@ -465,7 +551,7 @@ class HealthCareWorkflow(BaseCrawler):
         try:
             with open(summary_file, "w", encoding="utf-8") as f:
                 json.dump(summary, f, ensure_ascii=False, indent=2)
-            print(f"📊 요약 정보 저장: {summary_file}")
+            print(f"[FILE] 요약 정보 저장: {summary_file}")
         except IOError as e:
             print(f"경고: 요약 파일 저장 실패 - {e}")
 
@@ -473,11 +559,11 @@ class HealthCareWorkflow(BaseCrawler):
         print("\n" + "=" * 80)
         print("워크플로우 완료")
         print("=" * 80)
-        print(f"📊 초기 수집 링크 수: {len(initial_links)}")
-        print(f"🔄 총 처리 시도 URL 수: {processed_count}")
-        print(f"✅ 성공 (구조화): {final_successful_count}개")
-        print(f"❌ 실패: {final_failed_count}개")
-        print(f"📁 결과 저장 위치: {self.output_dir}")
+        print(f"[STAT] 초기 수집 링크 수: {len(initial_links)}")
+        print(f"[STAT] 총 처리 시도 URL 수: {processed_count}")
+        print(f"[SUCCESS] 성공 (구조화): {final_successful_count}개")
+        print(f"[ERROR] 실패: {final_failed_count}개")
+        print(f"[DIR] 결과 저장 위치: {self.output_dir}")
         print("=" * 80)
 
         return summary
@@ -516,7 +602,7 @@ def main():
         print("=" * 80)
         url = input("\n시작 URL을 입력하세요: ").strip()
         if not url:
-            print("❌ URL을 입력하지 않았습니다.")
+            print("[ERROR] URL을 입력하지 않았습니다.")
             return
 
     # 지역명 결정
@@ -537,10 +623,10 @@ def main():
 
     try:
         summary = workflow.run(start_url=url)
-        print("\n✅ 워크플로우 성공적으로 완료!")
+        print("\n[SUCCESS] 워크플로우 성공적으로 완료!")
 
     except Exception as e:
-        print(f"\n❌ 워크플로우 실패: {e}")
+        print(f"\n[ERROR] 워크플로우 실패: {e}")
         import traceback
 
         traceback.print_exc()
