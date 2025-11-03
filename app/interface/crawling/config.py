@@ -192,6 +192,14 @@ CRAWL_RULES = [
         "main_selector": ".side_menu li:not(.has) a",
         "sub_selector": None,
     },
+    {
+        "name": "서울시 임신출산정보센터",
+        "domain": "seoul-agi",
+        "single_page": True,
+        "menu_container": "#content-menu",
+        "main_selector": ".menu-item > .menu-link",
+        "sub_selector": ".menu-sub-item > a.menu-sub-link",
+    },
 ]
 
 # ========================================
