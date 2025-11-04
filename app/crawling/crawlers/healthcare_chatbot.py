@@ -3,7 +3,7 @@
 
 1. workflow.py 기능: 웹사이트에서 건강 지원 정보 수집 및 구조화
 2. agent.py 기능: FAISS 벡터 스토어 + 검색 도구 + 멀티턴 대화
-3. PDF 로더: PyMuPDF를 사용한 PDF 파일 처리
+3. PDF 로더: PyMuPDF를 사용한 PDF 파일 처리.
 """
 
 import json
