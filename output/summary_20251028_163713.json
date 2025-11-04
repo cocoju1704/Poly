@@ -1,0 +1,8 @@
+{
+  "timestamp": "20251028_163713",
+  "start_url": "https://dongjak.go.kr/healthcare/main/contents.do?menuNo=300236",
+  "total_links": 42,
+  "successful": 42,
+  "failed": 0,
+  "output_file": "output\\structured_data_20251028_163713.json"
+}
