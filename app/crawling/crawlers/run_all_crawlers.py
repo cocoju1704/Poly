@@ -6,7 +6,7 @@ import os
 import sys
 import traceback
 
-# 이 파일의 위치(app/interface/crawling/crawlers)를 기준으로
+# 이 파일의 위치(app/crawling/crawlers)를 기준으로
 # 프로젝트 최상위 경로(HealthInformer)를 찾아 시스템 경로에 추가합니다.
 project_root = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "..", "..", "..")
@@ -15,8 +15,8 @@ sys.path.insert(0, project_root)
 
 try:
     # 이제 최상위 경로가 포함되었으므로, 절대 경로로 임포트합니다.
-    from app.interface.crawling.crawlers.district_crawler import HealthCareWorkflow
-    from app.interface.crawling import utils
+    from app.crawling.crawlers.district_crawler import HealthCareWorkflow
+    from app.crawling import utils
 except ImportError as e:
     print("=" * 80)
     print("오류: 필요한 모듈을 임포트할 수 없습니다.")
@@ -54,7 +54,7 @@ def run_batch_crawling():
 
     # 절대 경로를 사용하여 output 디렉토리 위치를 명확히 지정합니다.
     base_output_dir = os.path.join(
-        project_root, "app", "interface", "crawling", "output"
+        project_root, "app", "crawling", "output"
     )
     print(f"총 {len(target_urls)}개의 보건소에 대한 크롤링을 시작합니다.")
     print("=" * 80)

@@ -26,7 +26,7 @@ from base.llm_crawler import LLMStructuredCrawler
 class EHealthCrawler(BaseCrawler):
     """e보건소 전용 크롤러"""
 
-    def __init__(self, output_dir: str = "app/interface/crawling/output"):
+    def __init__(self, output_dir: str = "app/crawling/output"):
         """
         Args:
             output_dir: 결과 저장 디렉토리
@@ -253,6 +253,8 @@ class EHealthCrawler(BaseCrawler):
         categories: List[str] = None,
         max_pages_per_category: int = None,
         output_filename: str = None,
+        return_data: bool = False,
+        save_json: bool = True,
     ):
         """
         전체 워크플로우 실행: 링크 수집 → 크롤링 → 저장
@@ -307,17 +309,17 @@ class EHealthCrawler(BaseCrawler):
             if idx < len(links):
                 time.sleep(1)
 
-        # 3단계: 결과 저장
-        print("\n[3단계] 결과 저장 중...")
+        # 3단계: 결과 저장/반환
+        print("\n[3단계] 결과 저장/반환 중...")
         print("-" * 80)
-
-        if output_filename is None:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            output_filename = f"ehealth_structured_data_{timestamp}.json"
-
-        output_path = os.path.join(self.output_dir, output_filename)
-        with open(output_path, "w", encoding="utf-8") as f:
-            json.dump(all_results, f, ensure_ascii=False, indent=2)
+        output_path = None
+        if save_json:
+            if output_filename is None:
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                output_filename = f"ehealth_structured_data_{timestamp}.json"
+            output_path = os.path.join(self.output_dir, output_filename)
+            with open(output_path, "w", encoding="utf-8") as f:
+                json.dump(all_results, f, ensure_ascii=False, indent=2)
 
         # 결과 요약
         print("\n" + "=" * 80)
@@ -326,7 +328,10 @@ class EHealthCrawler(BaseCrawler):
         print(f"✓ 전체 링크: {len(links)}개")
         print(f"✓ 성공: {success_count}개")
         print(f"✗ 실패: {fail_count}개")
-        print(f"✓ 결과 파일: {output_path}")
+        if save_json:
+            print(f"✓ 결과 파일: {output_path}")
+        if return_data:
+            return all_results
         print("=" * 80)
 
 
@@ -354,8 +359,8 @@ def main():
     parser.add_argument(
         "--output-dir",
         type=str,
-        default="app/interface/crawling/output",
-        help="출력 디렉토리 (기본값: app/interface/crawling/output)",
+        default="app/crawling/output",
+        help="출력 디렉토리 (기본값: app/crawling/output)",
     )
 
     args = parser.parse_args()

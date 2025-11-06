@@ -33,7 +33,7 @@ class HealthCareWorkflow(BaseCrawler):
     """보건소 사이트 크롤링 및 구조화 워크플로우 (탭 처리 기능 포함 - 컨테이너 저장)"""
 
     def __init__(
-        self, output_dir: str = "app/interface/crawling/output", region: str = None
+        self, output_dir: str = "app/crawling/output", region: str = None
     ):
         """
         Args:
@@ -366,6 +366,8 @@ class HealthCareWorkflow(BaseCrawler):
         start_url: str,
         crawl_rules: List[Dict] = None,
         save_links: bool = True,
+        save_json: bool = True,
+        return_data: bool = False,
     ) -> Dict:
         """
         전체 워크플로우 실행 (탭 처리 로직 수정: 컨테이너 페이지 저장)
@@ -498,24 +500,26 @@ class HealthCareWorkflow(BaseCrawler):
                 )
                 print(f"  오류 상세:\n{error_details}")  # 콘솔에도 상세 오류 출력
 
-        # 3단계: 결과 저장
-        print("\n[3단계] 결과 저장 중...")
+        # 3단계: 결과 저장 / 또는 메모리 반환
+        print("\n[3단계] 결과 저장/반환 준비 중...")
         print("-" * 80)
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         # 지역명은 초기 URL 기준 또는 지정된 값 사용
         region_name = self.region or utils.extract_region_from_url(start_url)
 
-        # 전체 구조화 데이터 저장
-        output_file = os.path.join(
-            self.output_dir, f"structured_data_{region_name}.json"
-        )
-        try:
-            with open(output_file, "w", encoding="utf-8") as f:
-                json.dump(structured_data_list, f, ensure_ascii=False, indent=2)
-            print(f"[SUCCESS] 구조화 데이터 저장: {output_file}")
-        except IOError as e:
-            print(f"오류: 구조화 데이터 파일 저장 실패 - {e}")
+        output_file = None
+        if save_json:
+            # 전체 구조화 데이터 저장
+            output_file = os.path.join(
+                self.output_dir, f"structured_data_{region_name}.json"
+            )
+            try:
+                with open(output_file, "w", encoding="utf-8") as f:
+                    json.dump(structured_data_list, f, ensure_ascii=False, indent=2)
+                print(f"[SUCCESS] 구조화 데이터 저장: {output_file}")
+            except IOError as e:
+                print(f"오류: 구조화 데이터 파일 저장 실패 - {e}")
 
         # 실패한 URL 저장
         failed_file = None  # 초기화
@@ -546,7 +550,8 @@ class HealthCareWorkflow(BaseCrawler):
             "output_file": output_file,
             "failed_urls_file": failed_file,  # 실패 파일 경로 저장
         }
-
+        if return_data:
+            summary["data"] = structured_data_list # 메모리 데이터 동봉
         summary_file = os.path.join(self.output_dir, f"summary_{timestamp}.json")
         try:
             with open(summary_file, "w", encoding="utf-8") as f:
@@ -580,8 +585,8 @@ def main():
     parser.add_argument(
         "--output-dir",
         type=str,
-        default="app/interface/crawling/output",
-        help="결과를 저장할 기본 디렉토리. 최종 경로는 'app/interface/crawling/output/지역명' 형태가 됩니다.",
+        default="app/crawling/output",
+        help="결과를 저장할 기본 디렉토리. 최종 경로는 'app/crawling/output/지역명' 형태가 됩니다.",
     )
     parser.add_argument(
         "--region",
