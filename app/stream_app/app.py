@@ -42,7 +42,7 @@ load_css("custom.css")
 # 공통 기본 프로필 데이터
 DEFAULT_NEW_PROFILE = {
     "name": "",
-    "birthDate": date(2000, 1, 1),
+    "birthDate": date(1950, 1, 1),
     "gender": "남성",
     "location": "",
     "healthInsurance": "직장",
@@ -58,7 +58,7 @@ if "profiles" not in st.session_state:
         {
             "id": str(uuid.uuid4()),
             "name": "기본 프로필",
-            "birthDate": date(1990, 1, 1),
+            "birthDate": date(1950, 1, 1),
             "gender": "남성",
             "location": "서울시 강남구",
             "healthInsurance": "직장",
@@ -212,8 +212,6 @@ def handle_logout():
 
 # --- SettingsModal 핸들러 ---
 def handle_font_size_change(size):
-    # st.session_state.font_size = size
-    # st.toast(f"글자 크기가 '{size}'로 설정되었습니다.")
     st.session_state.font_size = size
     st.success(f"글자 크기가 '{size}로 설정되었습니다.")
 
@@ -927,7 +925,8 @@ def render_my_page_modal():
                 "timestamp": time.time(),
             }
         ]
-        # clear_session()  # 세션 파일 삭제 부분 주석 처리
+        clear_session()  # 세션 파일 삭제 부분 주석 처리
+        # st.success("로그아웃 되었습니다.")
         st.rerun()
 
 
