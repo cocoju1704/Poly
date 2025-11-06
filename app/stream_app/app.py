@@ -927,7 +927,7 @@ def render_my_page_modal():
                 "timestamp": time.time(),
             }
         ]
-        clear_session()
+        # clear_session()  # 세션 파일 삭제 부분 주석 처리
         st.rerun()
 
 
