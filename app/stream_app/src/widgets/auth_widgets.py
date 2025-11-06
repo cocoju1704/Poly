@@ -38,28 +38,6 @@ def initialize_auth_state():
     for k, v in defaults.items():
         if k not in st.session_state:
             st.session_state[k] = v
-    # defaults = {
-    #     "auth_active_tab": "login",
-    #     "login_data": {"userId": "", "password": ""},
-    #     "auth_error": {"login": "", "signup": ""},
-    #     "signup_form_data": {
-    #         "userId": "",
-    #         "password": "",
-    #         "confirmPassword": "",
-    #         "name": "",
-    #         "gender": GENDER_OPTIONS[0],
-    #         "birthDate": "",
-    #         "location": "",
-    #         "healthInsurance": HEALTH_INSURANCE_OPTIONS[0],
-    #         "incomeLevel": "",
-    #         "basicLivelihood": BASIC_LIVELIHOOD_OPTIONS[0],
-    #     },
-    #     "is_id_available": None,
-    #     "is_checking_id": False,
-    # }
-    # for k, v in defaults.items():
-    #     if k not in st.session_state:
-    #         st.session_state[k] = v
 
 
 def render_chatbot_page():
@@ -112,8 +90,8 @@ def render_login_tab():
                 data["userId"],
                 {
                     "userId": data["userId"],
-                    "login_time": datetime.datetime.now().isoformat()
-                }
+                    "login_time": datetime.datetime.now().isoformat(),
+                },
             )
         else:
             st.session_state["auth_error"]["login"] = message
@@ -161,7 +139,7 @@ def render_signup_tab():
             "아이디 *",
             value=sdata.get("userId", ""),
             key="signup_userid",
-            placeholder="아이디를 입력하세요"
+            placeholder="아이디를 입력하세요",
         )
     with col_check:
         st.markdown("<br>", unsafe_allow_html=True)  # 버튼 정렬을 위한 공백
@@ -174,9 +152,9 @@ def render_signup_tab():
                 else:
                     st.session_state["is_id_available"] = False
                     st.error(msg)
-    
+
     with st.form("signup_form"):
-        
+
         # 비밀번호
         st.text_input(
             "비밀번호 *",
@@ -184,18 +162,18 @@ def render_signup_tab():
             value=sdata.get("password", ""),
             key="signup_pw",
             placeholder="8자 이상 입력하세요",
-            help="비밀번호는 8자 이상이어야 합니다."
+            help="비밀번호는 8자 이상이어야 합니다.",
         )
-        
+
         # 비밀번호 확인
         st.text_input(
             "비밀번호 확인 *",
             type="password",
             value=sdata.get("confirmPassword", ""),
             key="signup_pw_confirm",
-            placeholder="비밀번호를 다시 입력하세요"
+            placeholder="비밀번호를 다시 입력하세요",
         )
-        
+
         # 생년월일
         min_date = datetime.date(1923, 1, 1)
         max_date = datetime.date.today()
@@ -206,51 +184,55 @@ def render_signup_tab():
             min_value=min_date,
             max_value=max_date,
             key="signup_birthdate",
-            format="YYYY-MM-DD"
+            format="YYYY-MM-DD",
         )
-        
+
         # 성별
         st.selectbox(
             "성별 *",
             options=GENDER_OPTIONS,
-            index=0 if not sdata.get("gender") else GENDER_OPTIONS.index(sdata.get("gender", GENDER_OPTIONS[0])),
+            index=(
+                0
+                if not sdata.get("gender")
+                else GENDER_OPTIONS.index(sdata.get("gender", GENDER_OPTIONS[0]))
+            ),
             key="signup_gender",
-            placeholder="선택하세요"
+            placeholder="선택하세요",
         )
-        
+
         # 거주지
         st.text_input(
             "거주지 (시군구) *",
             value=sdata.get("location", ""),
             key="signup_location",
-            placeholder="예: 서울시 강남구"
+            placeholder="예: 서울시 강남구",
         )
-        
+
         # 건강보험 자격
         st.selectbox(
             "건강보험 자격 *",
             options=HEALTH_INSURANCE_OPTIONS,
             key="signup_health",
-            placeholder="선택하세요"
+            placeholder="선택하세요",
         )
-        
+
         # 중위소득 대비 소득수준
         st.text_input(
             "중위소득 대비 소득수준 (%) *",
             value=sdata.get("incomeLevel", ""),
             key="signup_income",
             placeholder="예: 50, 100, 150",
-            help="중위소득 대비 소득 수준을 백분율로 입력하세요"
+            help="중위소득 대비 소득 수준을 백분율로 입력하세요",
         )
-        
+
         # 기초생활보장 급여
         st.selectbox(
             "기초생활보장 급여 *",
             options=BASIC_LIVELIHOOD_OPTIONS,
             key="signup_basic",
-            placeholder="선택하세요"
+            placeholder="선택하세요",
         )
-        
+
         # 장애 등급
         disability_map = {"미등록": "0", "심한 장애": "1", "심하지 않은 장애": "2"}
         disability_options = list(disability_map.keys())
@@ -258,9 +240,9 @@ def render_signup_tab():
             "장애 등급 *",
             options=disability_options,
             key="signup_disability",
-            placeholder="선택하세요"
+            placeholder="선택하세요",
         )
-        
+
         # 장기요양 등급
         longterm_map = {
             "해당없음": "NONE",
@@ -276,27 +258,29 @@ def render_signup_tab():
             "장기요양 등급 *",
             options=longterm_options,
             key="signup_longterm",
-            placeholder="선택하세요"
+            placeholder="선택하세요",
         )
-        
+
         # 임신·출산 여부
         pregnancy_options = ["없음", "임신중", "출산후12개월이내"]
         st.selectbox(
             "임신·출산 여부 *",
             options=pregnancy_options,
             key="signup_pregnancy",
-            placeholder="선택하세요"
+            placeholder="선택하세요",
         )
 
         if err:
             st.error(err)
 
-        submitted = st.form_submit_button("회원가입", use_container_width=True, type="primary")
+        submitted = st.form_submit_button(
+            "회원가입", use_container_width=True, type="primary"
+        )
 
         if submitted:
             # 아이디는 폼 밖에 있으므로 session_state에서 가져오기
             user_id_value = st.session_state.get("signup_userid", "")
-            
+
             # 폼 데이터 수집
             signup_data = {
                 "userId": user_id_value,
@@ -322,17 +306,6 @@ def render_signup_tab():
             else:
                 st.session_state["auth_error"]["signup"] = message
                 st.rerun()
-
-
-# def render_auth_modal():
-#     initialize_auth_state()
-#     st.markdown("### SIMPLECIRCLE")
-#     st.markdown("로그인하거나 새 계정을 만드세요")
-#     login_tab, signup_tab = st.tabs(["로그인", "회원가입"])
-#     with login_tab:
-#         render_login_tab()
-#     with signup_tab:
-#         render_signup_tab()
 
 
 def render_auth_modal(show_header: bool = True):
