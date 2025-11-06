@@ -32,9 +32,7 @@ from components.page_processor import PageProcessor
 class DistrictCrawler(BaseCrawler):
     """보건소 사이트 크롤링 및 구조화 워크플로우"""
 
-    def __init__(
-        self, output_dir: str = "app/interface/crawling/output", region: str = None
-    ):
+    def __init__(self, output_dir: str = "app/crawling/output", region: str = None):
         """
         Args:
             output_dir: 결과 저장 디렉토리
@@ -61,6 +59,8 @@ class DistrictCrawler(BaseCrawler):
         start_url: str,
         crawl_rules: List[Dict] = None,
         save_links: bool = True,
+        save_json: bool = True,
+        return_data: bool = False,
         enable_keyword_filter: bool = True,
     ) -> Dict:
         """
@@ -107,6 +107,8 @@ class DistrictCrawler(BaseCrawler):
             structured_data_list,
             failed_urls,
             processed_count,
+            save_json,
+            return_data,
         )
 
         # 최종 요약 출력
@@ -332,6 +334,8 @@ class DistrictCrawler(BaseCrawler):
         structured_data_list: List[Dict],
         failed_urls: List[Dict],
         processed_count: int,
+        save_json: bool = True,
+        return_data: bool = False,
     ) -> Dict:
         """
         결과 저장
@@ -345,16 +349,18 @@ class DistrictCrawler(BaseCrawler):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         region_name = self.region or utils.extract_region_from_url(start_url)
 
-        # 구조화 데이터 저장
-        output_file = os.path.join(
-            self.output_dir, f"structured_data_{region_name}.json"
-        )
-        try:
-            with open(output_file, "w", encoding="utf-8") as f:
-                json.dump(structured_data_list, f, ensure_ascii=False, indent=2)
-            print(f"[SUCCESS] 구조화 데이터 저장: {output_file}")
-        except IOError as e:
-            print(f"오류: 구조화 데이터 파일 저장 실패 - {e}")
+        output_file = None
+        if save_json:
+            # 전체 구조화 데이터 저장
+            output_file = os.path.join(
+                self.output_dir, f"structured_data_{region_name}.json"
+            )
+            try:
+                with open(output_file, "w", encoding="utf-8") as f:
+                    json.dump(structured_data_list, f, ensure_ascii=False, indent=2)
+                print(f"[SUCCESS] 구조화 데이터 저장: {output_file}")
+            except IOError as e:
+                print(f"오류: 구조화 데이터 파일 저장 실패 - {e}")
 
         # 실패한 URL 저장
         failed_file = None
@@ -381,7 +387,8 @@ class DistrictCrawler(BaseCrawler):
             "output_file": output_file,
             "failed_urls_file": failed_file,
         }
-
+        if return_data:
+            summary["data"] = structured_data_list  # 메모리 데이터 동봉
         summary_file = os.path.join(self.output_dir, f"summary_{timestamp}.json")
         try:
             with open(summary_file, "w", encoding="utf-8") as f:
@@ -422,8 +429,8 @@ def main():
     parser.add_argument(
         "--output-dir",
         type=str,
-        default="app/interface/crawling/output",
-        help="결과를 저장할 기본 디렉토리. 최종 경로는 'app/interface/crawling/output/지역명' 형태가 됩니다.",
+        default="app/crawling/output",
+        help="결과를 저장할 기본 디렉토리. 최종 경로는 'app/crawling/output/지역명' 형태가 됩니다.",
     )
     parser.add_argument(
         "--region",
