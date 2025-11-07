@@ -11,3 +11,4 @@ python-multipart>=0.0.6
 python-jose[cryptography]>=3.3.0
  <br />
 passlib[bcrypt]>=1.7.4
+
