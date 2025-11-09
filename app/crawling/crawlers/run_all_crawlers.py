@@ -15,7 +15,7 @@ sys.path.insert(0, project_root)
 
 try:
     # 이제 최상위 경로가 포함되었으므로, 절대 경로로 임포트합니다.
-    from app.crawling.crawlers.district_crawler import HealthCareWorkflow
+    from app.crawling.crawlers.district_crawler import DistrictCrawler
     from app.crawling import utils
 except ImportError as e:
     print("=" * 80)
@@ -53,9 +53,7 @@ def run_batch_crawling():
     ]
 
     # 절대 경로를 사용하여 output 디렉토리 위치를 명확히 지정합니다.
-    base_output_dir = os.path.join(
-        project_root, "app", "crawling", "output"
-    )
+    base_output_dir = os.path.join(project_root, "app", "crawling", "output")
     print(f"총 {len(target_urls)}개의 보건소에 대한 크롤링을 시작합니다.")
     print("=" * 80)
 
@@ -78,7 +76,7 @@ def run_batch_crawling():
             os.makedirs(output_dir_for_region, exist_ok=True)
 
             # 워크플로우 인스턴스 생성 및 실행
-            workflow = HealthCareWorkflow(
+            workflow = DistrictCrawler(
                 output_dir=output_dir_for_region, region=region_name
             )
             summary = workflow.run(start_url=url)
