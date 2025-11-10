@@ -30,7 +30,6 @@ if not OPENAI_API_KEY:
     utils_db.eprint("환경변수 OPENAI_API_KEY가 필요합니다."); sys.exit(1)
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-# 스키마 보강: eval_target/eval_content 추가 (기존 eval_overall 유지 안 함)
 ALTER_DOCUMENTS_SQL = """
 ALTER TABLE documents
     ADD COLUMN IF NOT EXISTS title TEXT,
@@ -42,13 +41,13 @@ ALTER TABLE documents
     ADD COLUMN IF NOT EXISTS region TEXT,
     ADD COLUMN IF NOT EXISTS sitename TEXT,
     ADD COLUMN IF NOT EXISTS weight INTEGER DEFAULT 0,
-    ADD COLUMN IF NOT EXISTS eval_scores JSONB,
     ADD COLUMN IF NOT EXISTS eval_target INTEGER,
     ADD COLUMN IF NOT EXISTS eval_content INTEGER,
     ADD COLUMN IF NOT EXISTS llm_reinforced BOOLEAN DEFAULT FALSE,
     ADD COLUMN IF NOT EXISTS llm_reinforced_sources JSONB,
     ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
 """
+
 
 def ensure_documents_schema(cur):
     cur.execute(ALTER_DOCUMENTS_SQL)
@@ -103,7 +102,6 @@ def main():
             region = item.get("region","")
 
             # NEW: 0~10 원시점수 + 합성점수
-            eval_scores = item.get("eval_scores")             # dict or None
             eval_target = item.get("eval_target")             # int or None
             eval_content = item.get("eval_content")           # int or None
 
@@ -116,16 +114,16 @@ def main():
             cur.execute("""
                 INSERT INTO documents
                     (title, requirements, benefits, raw_text, url, policy_id,
-                     region, sitename, weight, eval_scores, eval_target, eval_content,
+                     region, sitename, weight, eval_target, eval_content,
                      llm_reinforced, llm_reinforced_sources)
                 VALUES
                     (%s, %s, %s, %s, %s, %s,
                      %s, %s, %s, %s, %s, %s,
-                     %s, %s)
+                     %s)
                 RETURNING id;
             """, (
                 title, requirements, benefits, raw_text, url, policy_id,
-                region, sitename, weight, Json(eval_scores) if eval_scores is not None else None,
+                region, sitename, weight,
                 eval_target, eval_content, llm_reinforced, llm_reinforced_sources
             ))
             doc_id = cur.fetchone()[0]

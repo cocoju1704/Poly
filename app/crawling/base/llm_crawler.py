@@ -5,7 +5,7 @@ llm_crawler.py
 변경 요약
 - ★ 평가를 '요약문만' 기반으로 산출하도록 2단계로 분리
   1) 원문(raw_text) → (title, support_target, support_content) 요약 생성
-  2) 요약(support_target, support_content)만 입력 → eval_target(0/2/4/6/8/10), eval_content(0~10) 산출
+  2) 요약(support_target, support_content)만 입력 → eval_target(1~10), eval_content(0~10) 산출
 - 지역 표현 일반화(OO구민/주민,시민) 유지
 - content 평가는 단일 종합점수(0~10) 유지
 """
@@ -38,7 +38,7 @@ class HealthSupportInfo(BaseModel):
     source_url: Optional[str] = Field(default=None, description="출처 URL")
     region: Optional[str] = Field(default=None, description="지역명 (예: 광진구, 전국)")
     # 평가 점수(요약만 기반)
-    eval_target: Optional[int] = Field(default=None, ge=0, le=10, description="지원대상 6단계(0/2/4/6/8/10)")
+    eval_target: Optional[int] = Field(default=None, ge=0, le=10, description="지원대상 단일 종합 점수(1~10)")
     eval_content: Optional[int] = Field(default=None, ge=0, le=10, description="지원내용 단일 종합 점수(0~10)")
 
 
@@ -55,15 +55,15 @@ class _LLMSummary(BaseModel):
 # 2단계: 요약 평가용 LLM 출력 스키마(요약만 기반)
 # ─────────────────────────────────────────────────────────────────────
 class _LLMEval(BaseModel):
-    target_level: int = Field(ge=0, le=10, description="0/2/4/6/8/10 중 하나")
-    content_level: int = Field(ge=0, le=10, description="0~10")
+    eval_target: int = Field(ge=0, le=10, description="1~10")
+    eval_content: int = Field(ge=0, le=10, description="0~10")
 
 
 class LLMStructuredCrawler(BaseCrawler):
     """
     2단계 파이프라인:
       (1) raw_text → 요약(title, support_target, support_content)
-      (2) 요약만 입력 → eval_target(0/2/4/6/8/10), eval_content(0~10)
+      (2) 요약만 입력 → eval_target(1~10), eval_content(0~10)
     """
 
     def __init__(self, api_key: str = None, model: str = "gpt-4o-mini"):
@@ -134,9 +134,19 @@ class LLMStructuredCrawler(BaseCrawler):
     def _generalize_region_terms(self, text: str) -> str:
         if not text:
             return text
-        t = re.sub(r"([가-힣]+구)\s*(주민|구민|거주자)", "지역주민", text)
-        t = re.sub(r"([가-힣]+시)\s*(주민|시민)", "지역주민", t)
-        t = re.sub(r"([가-힣]+구[\s·,]+)+주민", "지역주민", t)
+        t = text
+
+        # 1) 구 단위: "강북구 구민/주민/거주자" + "강북구민" 모두 → "지역주민"
+        t = re.sub(r"([가-힣]+구)\s*(?:주민|구민|거주자)", "지역주민", t)
+        t = re.sub(r"([가-힣]+)구민", "지역주민", t)  # 붙여쓴 형태
+
+        # 2) 시 단위: "서울시 시민/주민" + "서울시민" 모두 → "지역주민"
+        t = re.sub(r"([가-힣]+시)\s*(?:시민|주민)", "지역주민", t)
+        t = re.sub(r"([가-힣]+)시민", "지역주민", t)  # 붙여쓴 형태
+
+        # 3) "○○구 ... 주민" 형태(중간에 구 이름 여러 개 + 구분자) → "지역주민"
+        t = re.sub(r"((?:[가-힣]+구[\s·,]+)+)주민", "지역주민", t)
+
         return t
 
     # ---------------- 텍스트 정리 ----------------
@@ -211,16 +221,23 @@ class LLMStructuredCrawler(BaseCrawler):
         """
         RULES_EVAL = """
 너는 아래 '요약문'만을 근거로 점수를 부여한다. 원문은 보지 않는다. 추론/추가 생성 금지.
+- "미취학 아동, 초·중·고등학교 학생, 성인"같은 연속적인 연령군 나열은 단일 조건으로 본다.
+- 동시에 충족해야 하는 조건만 복수 정성조건으로 인정한다.
+- "지역주민" 단독은 기본점수로 둔다.
 
-[지원대상 6단계 target_level]
-0 : 정보 없음
+[지원대상 eval_target]
+1 : 정보 없음
 2 : 일반 거주 조건(지역주민/서울시민 등)
-4 : 단일 정성 조건 1개(청년/노인/장애/임산부/부부 등)
-6 : 정성 조건 2개 이상 또는 단일 정량 조건 1개(소득/병명/기간 등)
-8 : 정량 + 정성 복합
-10: 예외/제외/증빙 등 예외 명시 포함
+3 : 단일 정성 조건 1개(청년/노인/장애/임산부/부부 등)
+4 : 일반 거주 조건 + 단일 정성 조건
+5 : 단일 정량 조건 1개(소득/병명/기간 등)
+6 : 정성 조건 2개
+7 : 정량 + 정성 복합조건
+8 : 다중 복합조건 or 정성 조건 4개
+9 : 명시적 행정기준 포함 복합조건
+10 : 예외 조항 포함 복합조건
 
-[지원내용 content_level — 단일 종합(0~10, 정수)]
+[지원내용 eval_content — 단일 종합(0~10, 정수)]
 - 0 : 지원내용 없음
 - 2 : 모호한 서술(‘지원합니다’ 등)
 - 4 : 항목은 있으나 금액/기간/횟수 등 핵심 세부 미기재
@@ -228,10 +245,11 @@ class LLMStructuredCrawler(BaseCrawler):
 - 8 : 지원항목 다수 + 절차/제외조건 등 복수 요소 포함
 - 10: 금액/횟수/기간/절차/예외 모두 구체적으로 명시
 
+
 [출력(JSON만)]
 {
-  "target_level": 0|2|4|6|8|10,
-  "content_level": 0|1|2|3|4|5|6|7|8|9|10
+  "eval_target": 1|2|3|4|5|6|7|8|9|10,
+  "eval_content": 0|1|2|3|4|5|6|7|8|9|10
 }
 """
         user_prompt = (
@@ -254,7 +272,7 @@ class LLMStructuredCrawler(BaseCrawler):
             parsed = _LLMEval(**data)
         except Exception as e:
             print(f"⚠️ 요약 평가 실패: {e}")
-            parsed = _LLMEval(target_level=0, content_level=0)
+            parsed = _LLMEval(eval_target=0, eval_content=0)
         return parsed
 
     # ---------------- 메인 절차 ----------------
@@ -283,8 +301,8 @@ class LLMStructuredCrawler(BaseCrawler):
             support_target=out_target,
             support_content=out_content,
             raw_text=raw_text,                 # 보관은 하되 평가에는 사용하지 않음
-            eval_target=int(eval_res.target_level),
-            eval_content=int(eval_res.content_level),
+            eval_target=int(eval_res.eval_target),
+            eval_content=int(eval_res.eval_content),
         )
 
     # ---------------- 외부 인터페이스 ----------------
@@ -365,7 +383,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--model",
         type=str,
-        default="gpt-4o-mini",
+        default="gpt-4o",
         help="사용 모델 (예: gpt-4o, gpt-4o-mini)",
     )
     args = parser.parse_args()

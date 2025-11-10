@@ -1,7 +1,7 @@
 # app/crawling/dbsetup_pipeline.py
 # 목적: district, welfare, ehealth 크롤러 → DB 업로드 → policy_id 그루핑
 # 중간 JSON 없이, 메모리에서 바로 documents/embeddings에 삽입
-# 진행률(%) 출력 + eval_scores/eval_overall 반영 + pgvector 안전삽입 버전
+# 진행률(%) 출력 + pgvector 안전삽입 버전
 
 import os, sys, argparse, traceback
 from datetime import datetime
@@ -11,8 +11,9 @@ from openai import OpenAI
 from dotenv import load_dotenv
 
 # 프로젝트 루트 경로 보정
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
-sys.path.insert(0, PROJECT_ROOT)
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
 from app.crawling.crawlers.district_crawler import DistrictCrawler
 from app.crawling.crawlers.welfare_crawler import WelfareCrawler
@@ -69,7 +70,7 @@ def ensure_pgvector(conn):
 
 
 def ensure_documents_schema(conn):
-    """dbuploader.ensure_documents_schema 사용 (eval_scores/eval_overall 포함)"""
+    """dbuploader.ensure_documents_schema 사용 (eval_target/eval_content 포함)"""
     with conn.cursor() as cur:
         dbuploader.ensure_documents_schema(cur)
     conn.commit()
@@ -181,7 +182,6 @@ def upload_records(records, reset="none", emb_model="text-embedding-3-small", co
             region = item.get("region","")
 
             # NEW: 0~10 원시점수 + 합성점수
-            eval_scores  = item.get("eval_scores")
             eval_target  = item.get("eval_target")
             eval_content = item.get("eval_content")
 
@@ -191,17 +191,17 @@ def upload_records(records, reset="none", emb_model="text-embedding-3-small", co
             cur.execute("""
                 INSERT INTO documents
                     (title, requirements, benefits, raw_text, url, policy_id,
-                     region, sitename, weight, eval_scores, eval_target, eval_content,
+                     region, sitename, weight, eval_target, eval_content,
                      llm_reinforced, llm_reinforced_sources)
                 VALUES
                     (%s, %s, %s, %s, %s, %s,
                      %s, %s, %s, %s, %s, %s,
-                     %s, %s)
+                     %s)
                 RETURNING id;
             """, (
                 title, requirements, benefits, raw_text, url, None,
-                region, sitename, weight, Json(eval_scores) if eval_scores is not None else None,
-                eval_target, eval_content, False, None
+                region, sitename, weight, eval_target, eval_content, 
+                False, None
             ))
             doc_id = cur.fetchone()[0]
 

@@ -3,7 +3,6 @@
 pgvector로 embeddings.embedding을 VECTOR(D)로 전환하고, 안전하게 삽입하는 스크립트
 - 기존 DOUBLE PRECISION[] -> VECTOR(D) 마이그레이션 지원
 - execute_values 에서 %s::vector 캐스팅
-- + documents 스키마 보강(eval_scores/eval_overall 등) 추가
 """
 
 import os
@@ -45,8 +44,8 @@ def ensure_documents_schema(conn):
         ADD COLUMN IF NOT EXISTS region TEXT,
         ADD COLUMN IF NOT EXISTS sitename TEXT,
         ADD COLUMN IF NOT EXISTS weight INTEGER DEFAULT 0,
-        ADD COLUMN IF NOT EXISTS eval_scores JSONB,
-        ADD COLUMN IF NOT EXISTS eval_overall INTEGER,
+        ADD COLUMN IF NOT EXISTS eval_target INTEGER,
+        ADD COLUMN IF NOT EXISTS eval_content INTEGER,
         ADD COLUMN IF NOT EXISTS llm_reinforced BOOLEAN DEFAULT FALSE,
         ADD COLUMN IF NOT EXISTS llm_reinforced_sources JSONB,
         ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
@@ -161,8 +160,6 @@ def ensure_documents_indexes(conn):
     CREATE INDEX IF NOT EXISTS idx_documents_region        ON documents (region);
     CREATE INDEX IF NOT EXISTS idx_documents_sitename      ON documents (sitename);
     CREATE INDEX IF NOT EXISTS idx_documents_policy_id     ON documents (policy_id);
-    CREATE INDEX IF NOT EXISTS idx_documents_eval_overall  ON documents (eval_overall);
-    CREATE INDEX IF NOT EXISTS idx_documents_eval_scores_gin ON documents USING GIN (eval_scores);
     """
     with conn.cursor() as cur:
         cur.execute(sql)
