@@ -1,45 +1,63 @@
 ## 프론트 엔드 구조
- stream_app/          # 프론트엔드 (Streamlit)
+ stream_app/              # 프론트엔드 (Streamlit) 루트
  <br />
- │   │   ├── app.py           # 메인 앱
+ │
   <br />
- │   │   ├── pages/           # 페이지
-  <br />
- │   │   ├── src/             # 소스 코드
-  <br />
- │   │   │   ├── widgets/     # UI 위젯
-  <br />
- │   │   │   ├── utils/       # 유틸리티
-  <br />
- │   │   ├── templates/       # HTML 템플릿(각 컴포넌트와 관련된 HTML)
-  <br />
- │   │   └── styles/          # CSS 스타일
+ ├── app.py               # 메인 앱 (진입점)
  <br />
+ │
+ <br />
+ ├── src/                 # 소스 코드
+ <br />
+ │   ├── pages/           # 페이지별 UI 및 핸들러 로직
+ <br />
+ │   │   ├── auth.py
+  <br />
+ │   │   ├── chat.py
+ <br />
+ │   │   ├── my_page.py
+  <br />
+ │   │   └── settings.py
+  <br />
+ │   │
+ <br />
+ │   ├── widgets/         # 재사용 가능한 UI 위젯
+ <br />
+ │   │   └── sidebar.py
+ <br />
+ │   │
+  <br />
+ │   ├── utils/           # 공통 유틸리티
+ <br />
+ │   │   ├── session_manager.py
+ <br />
+ │   │   └── template_loader.py
+ <br />
+ │   │
+ <br />
+ │   ├── db/              # 데이터베이스 관련 로직
+ <br />
+ │   │   └── database.py
+ <br />
+ │   │
+ <br />
+ │   ├── backend_service.py # API 함수 래퍼 (DB와 UI의 중간 계층)
+ <br />
+ │   ├── llm_manager.py     # LangChain 및 LLM 관리
+ <br />
+ │   └── state_manger.py    # 세션 상태 초기화
+ <br />
+ │
+ <br />
+ ├── templates/           # HTML 템플릿
+ <br />
+ │   └── components/      # 컴포넌트별 HTML 조각
+ <br />
+ │
+ <br />
+ └── styles/              # CSS 스타일
+     └── components/      # 컴포넌트별 CSS 조각
 
-app.py
-- 애플리케이션 초기화: Streamlit 애플리케이션을 시작하고 필요한 라이브러리 및 모듈을 가져옵니다.
-
-- 세션 상태 관리: 사용자 세션 정보를 관리하여 로그인 상태, 사용자 프로필, 메시지 등을 저장합니다.
-
-- UI 구성: Streamlit의 다양한 UI 요소(버튼, 입력 필드, 차트 등)를 사용하여 사용자 인터페이스를 구성합니다.
-
-- 비즈니스 로직 처리: 사용자 입력에 따라 애플리케이션의 동작을 정의하고, 필요한 경우 데이터베이스와 상호작용하거나 외부 API를 호출합니다.
-
-- 페이지 라우팅: 사용자가 선택한 옵션에 따라 다른 페이지나 모달을 렌더링합니다.
-
-- 로그인 및 인증: 사용자 인증을 처리하고, 로그인 및 로그아웃 기능을 구현합니다.
-
-- 데이터 시각화: 데이터를 시각적으로 표현하기 위해 차트나 그래프를 생성합니다.
-
-utils 폴더
-- 1.유틸리티 함수: 애플리케이션에서 공통적으로 사용되는 함수나 클래스를 포함합니다. 예를 들어, 데이터 처리, 형식 변환, API 호출, 로깅 등과 같은 기능을 수행하는 코드가 위치합니다.
-- 2.재사용성: 여러 모듈에서 재사용할 수 있는 코드 조각을 제공하여 코드 중복을 줄이고 유지보수를 용이하게 합니다.
-- 3.구성 관리: 설정 파일이나 환경 변수를 관리하는 기능을 포함할 수 있습니다.
-
-widgets 폴더
-- 1.UI 구성 요소: Streamlit 또는 다른 프레임워크에서 사용할 수 있는 사용자 인터페이스 구성 요소를 포함합니다. 예를 들어, 버튼, 입력 필드, 드롭다운 메뉴 등과 같은 UI 요소를 정의합니다.
-- 2.모듈화: UI 요소를 모듈화하여 코드의 가독성을 높이고, 필요에 따라 쉽게 재사용할 수 있도록 합니다.
-- 3.상태 관리: 사용자 입력에 따라 상태를 관리하고, UI의 동작을 제어하는 로직을 포함할 수 있습니다.
 
 ## 아키텍처
 
@@ -48,16 +66,10 @@ widgets 폴더
 - **기술**: Streamlit (Python)
 - **기능**:
   - 사용자 인터페이스
-  - 로그인/회원가입
+  - 로그인 / 회원가입
   - 챗봇 대화 인터페이스
   - 프로필 관리
   - 설정 관리
-
-
-  ### 프론트엔드 개발
-- Streamlit 위젯은 `app/stream_app/src/widgets/` 에서 관리
-- HTML 템플릿은 `app/stream_app/templates/` 에서 관리
-- CSS 스타일은 `app/stream_app/styles/` 에서 관리
 
 ### 2. 모듈 구조 (분리된 페이지/로직)
 - 진입점: `app/stream_app/app.py` (라우팅/초기화/전역상태 최소 유지)
@@ -65,11 +77,22 @@ widgets 폴더
 - 마이페이지: `app/stream_app/src/pages/my_page.py` (프로필 조회/편집/추가/삭제)
 - 설정: `app/stream_app/src/pages/settings.py` (비밀번호 변경/알림/회원탈퇴)
 - 챗봇: `app/stream_app/src/pages/chat.py` (채팅 렌더링/메시지 전송/정책 카드 파싱)
+- 백엔드 서비스: `app/stream_app/src/backend_service.py` (UI와 DB 로직을 연결하는 중간 계층)
+- 데이터베이스: `app/stream_app/src/db/database.py` (PostgreSQL DB 연결 및 CRUD 함수)
 - LLM 매니저: `app/stream_app/src/llm_manager.py` (ChatOpenAI 초기화 및 응답/스트리밍)
 
 ### 3. 실행 흐름 요약
-1) 앱 시작 시 `app.py`에서 세션/인증 상태를 초기화하고 저장된 세션을 복원
-2) 비로그인: `render_auth_modal()`
-3) 로그인: 사이드바 + (설정/마이페이지 모달 중 하나) 또는 기본 `render_chatbot_main()`
-4) 메시지 전송은 `pages/chat.py`의 `handle_send_message`가 담당, LLM 스트리밍 사용
-5) 정책 JSON 코드블록을 파싱해 정책 카드를 렌더링
+1. **앱 시작**: `app.py`가 실행되며 `state_manger.py`와 `auth.py`의 초기화 함수를 호출하여 `st.session_state`를 설정합니다.
+2. **세션 복원**: `session_manager.load_session()`을 통해 파일에 저장된 세션(사용자 UUID 등)이 있는지 확인하고, 있다면 로그인 상태를 복원합니다.
+3. **라우팅**:
+    - **비로그인 상태**: `render_landing_page()` 함수가 호출되어 랜딩 페이지와 함께 로그인/회원가입 탭을 표시합니다.
+    - **로그인 상태**: `render_sidebar()`로 사이드바를 표시하고, `st.session_state`의 상태에 따라 `render_settings_modal()`, `render_my_page_modal()`, 또는 `render_chatbot_main()` 중 하나를 렌더링합니다.
+4. **사용자 인증**:
+    - **회원가입**: `auth.py`에서 사용자 정보를 받아 `database.py`의 `create_user_and_profile`을 호출하여 DB에 저장합니다.
+    - **로그인**: `auth.py`에서 `username`과 `password`를 받아 `database.py`의 `get_user_password_hash`로 검증 후, `get_user_by_username`으로 사용자 정보(UUID 포함)를 가져와 세션에 저장합니다.
+5. **챗봇 메시지 전송**:
+    - `chat.py`의 `handle_send_message` 함수가 사용자 입력을 처리합니다.
+    - `llm_manager.py`를 통해 현재 활성 프로필 정보를 포함한 프롬프트를 구성하고, `ChatOpenAI`의 스트리밍 응답을 받아 화면에 실시간으로 표시합니다.
+6. **데이터 관리**:
+    - 모든 사용자 및 프로필 관련 데이터 처리는 `id`(UUID)를 기본 식별자로 사용합니다.
+    - `backend_service.py`는 UI 페이지와 `database.py` 사이의 중간 다리 역할을 하며, 직접적인 DB 호출을 추상화합니다.
