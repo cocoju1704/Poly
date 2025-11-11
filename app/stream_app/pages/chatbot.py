@@ -40,25 +40,25 @@ def handle_send_logic(prompt: str):
     st.session_state["is_loading"] = True
 
     # 챗봇 응답 추가
-    assistant_message = {
-        "id": str(uuid.uuid4()),
-        "role": "assistant",
-        "content": "고객님의 조건에 맞는 정책을 찾았습니다.",
-        "timestamp": time.time(),
-        "policies": [
-            {
-                "id": "1",
-                "title": "청년 월세 지원",
-                "description": "만 19세~34세 청년의 주거비 부담을 덜어주기 위한 월세 지원 정책입니다.",
-                "eligibility": "만 19~34세, 소득 기준 충족, 서울시 거주",
-                "benefits": "월 최대 20만원 지원 (최대 12개월)",
-                "applicationUrl": "https://housing.seoul.go.kr/site/main/content/sh01_060513",
-                "isEligible": True,
-            }
-        ],
-    }
-    st.session_state.messages.append(assistant_message)
-    st.session_state["is_loading"] = False
+    # assistant_message = {
+    #     "id": str(uuid.uuid4()),
+    #     "role": "assistant",
+    #     "content": "고객님의 조건에 맞는 정책을 찾았습니다.",
+    #     "timestamp": time.time(),
+    #     "policies": [
+    #         {
+    #             "id": "1",
+    #             "title": "청년 월세 지원",
+    #             "description": "만 19세~34세 청년의 주거비 부담을 덜어주기 위한 월세 지원 정책입니다.",
+    #             "eligibility": "만 19~34세, 소득 기준 충족, 서울시 거주",
+    #             "benefits": "월 최대 20만원 지원 (최대 12개월)",
+    #             "applicationUrl": "https://housing.seoul.go.kr/site/main/content/sh01_060513",
+    #             "isEligible": True,
+    #         }
+    #     ],
+    # }
+    # st.session_state.messages.append(assistant_message)
+    # st.session_state["is_loading"] = False
 
     try:
         st.experimental_rerun()

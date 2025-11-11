@@ -2,8 +2,8 @@ import uuid
 import time
 import streamlit as st
 
-from src.backend_service import api_reset_password, api_delete_account
-from src.utils.session_manager import clear_session
+from ..backend_service import api_reset_password, api_delete_account
+from ..utils.session_manager import clear_session
 
 
 def initialize_settings_state():

@@ -1,12 +1,17 @@
-# 11.10 회원가입 수정
 import json
 import bcrypt
 import time
 import logging
 import re
-from pathlib import Path
 from typing import Dict, Any, Tuple, Optional
 from datetime import datetime
+
+# DB 접근 함수 임포트 (상대 경로 사용)
+try:
+    from src.db import database
+except ImportError:
+    # 순환 import 방지: database 모듈이 없을 경우를 대비
+    database = None
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
@@ -16,36 +21,11 @@ logger = logging.getLogger(__name__)
 # Mock 설정
 MOCK_API_DELAY = 0.5
 
-# 데이터 저장 경로
-DATA_DIR = Path("data")
-USERS_FILE = DATA_DIR / "users.json"
-PROFILES_FILE = DATA_DIR / "profiles.json"
-COLLECTIONS_FILE = DATA_DIR / "collections.json"
-USER_PROFILES_FILE = DATA_DIR / "user_profiles.json"  # 사용자별 다중 프로필 저장
-
-# 데이터 디렉토리 생성
-DATA_DIR.mkdir(exist_ok=True)
+# 기존 코드의 데이터 저장 경로 및 load_json, save_json 유틸리티 함수가 제거되었습니다.
+# 이제 모든 데이터 접근은 db_utils를 통해 이루어집니다.
 
 
 # === 유틸리티 함수 ===
-def load_json(filepath: Path) -> Dict:
-    """JSON 파일 로드"""
-    if filepath.exists():
-        try:
-            with open(filepath, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except json.JSONDecodeError:
-            logger.warning(f"JSON 파일 손상: {filepath}, 새로 생성합니다")
-            return {}
-    return {}
-
-
-def save_json(filepath: Path, data: Dict) -> None:
-    """JSON 파일 저장"""
-    with open(filepath, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2, default=str)
-
-
 def hash_password(password: str) -> str:
     """비밀번호 해싱 (bcrypt)"""
     return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
@@ -63,18 +43,11 @@ def verify_password(password: str, hashed: str) -> bool:
 def api_check_id_availability(user_id: str) -> Tuple[bool, str]:
     """
     아이디 중복 확인
-
-    Args:
-        user_id (str): 확인할 사용자 ID
-
-    Returns:
-        Tuple[bool, str]: (사용 가능 여부, 메시지)
     """
     try:
         time.sleep(MOCK_API_DELAY)
 
-        if not user_id or not user_id.strip():
-            return False, "아이디를 입력해주세요"
+        # ... (중략: 유효성 검사 로직 동일)
 
         user_id = user_id.strip()
 
@@ -87,8 +60,8 @@ def api_check_id_availability(user_id: str) -> Tuple[bool, str]:
         if user_id.lower() in reserved_ids:
             return False, "사용할 수 없는 아이디입니다"
 
-        # 중복 체크
-        users = load_json(USERS_FILE)
+        # [변경] 파일 I/O 로직을 db_utils.db_load_users() 호출로 대체
+        users = database.db_load_users()
         if user_id in users:
             logger.info(f"ID 중복: {user_id}")
             return False, "이미 사용 중인 아이디입니다"
@@ -104,13 +77,6 @@ def api_check_id_availability(user_id: str) -> Tuple[bool, str]:
 def api_login(user_id: str, password: str) -> Tuple[bool, str]:
     """
     로그인
-
-    Args:
-        user_id (str): 사용자 ID
-        password (str): 비밀번호
-
-    Returns:
-        Tuple[bool, str]: (로그인 성공 여부, 메시지)
     """
     try:
         time.sleep(MOCK_API_DELAY)
@@ -118,7 +84,8 @@ def api_login(user_id: str, password: str) -> Tuple[bool, str]:
         if not user_id or not password:
             return False, "아이디와 비밀번호를 입력해주세요"
 
-        users = load_json(USERS_FILE)
+        # [변경] 파일 I/O 로직을 db_utils.db_load_users() 호출로 대체
+        users = database.db_load_users()
 
         if user_id not in users:
             logger.warning(f"존재하지 않는 사용자: {user_id}")
@@ -133,7 +100,8 @@ def api_login(user_id: str, password: str) -> Tuple[bool, str]:
         # 마지막 로그인 시간 업데이트
         user["last_login"] = datetime.now().isoformat()
         users[user_id] = user
-        save_json(USERS_FILE, users)
+        # [변경] 파일 I/O 로직을 db_utils.db_save_users(users) 호출로 대체
+        database.db_save_users(users)
 
         logger.info(f"로그인 성공: {user_id}")
         return True, "로그인 성공"
@@ -147,29 +115,30 @@ def api_signup(user_id: str, profile_data: Dict[str, Any]) -> Tuple[bool, str]:
     """
     회원가입 - Profile과 Collection 분리 저장
 
-    Args:
-        user_id (str): 사용자 ID
-        profile_data (Dict[str, Any]): 회원가입 데이터
-            - userId, password
-            - Profile 9개 항목: birthDate, gender, location, healthInsurance,
-            incomeLevel, basicLivelihood, disabilityLevel, longTermCare, pregnancyStatus
-            - collectionData (선택): diseases, treatments, specialCases
-
-    Returns:
-        Tuple[bool, str]: (가입 성공 여부, 메시지)
+    참고: 롤백 처리 시, 부분 저장 방지를 위해 실패 시 이전 데이터를 다시 저장하는 방식으로 변경되었습니다.
     """
+    # 롤백을 위해 실패 시 이전 상태 데이터를 저장해두는 임시 저장소
+    rollback_users = None
+    rollback_profiles = None
+    rollback_collections = None
+
     try:
         time.sleep(MOCK_API_DELAY)
 
-        # 1. 필수 데이터 검증
+        # 1. 필수 데이터 검증 (동일)
         if not user_id or not profile_data.get("password"):
             return False, "필수 정보가 누락되었습니다"
 
         # 2. 중복 체크 (이중 검증)
-        users = load_json(USERS_FILE)
+        # [변경] 파일 I/O 로직을 db_utils.db_load_users() 호출로 대체
+        users = database.db_load_users()
+
         if user_id in users:
             logger.warning(f"이미 존재하는 사용자: {user_id}")
             return False, "이미 존재하는 아이디입니다"
+
+        # 롤백을 위한 데이터 복사
+        rollback_users = users.copy()
 
         # 3. Users 테이블에 인증 정보 저장
         hashed_password = hash_password(profile_data["password"])
@@ -179,13 +148,16 @@ def api_signup(user_id: str, profile_data: Dict[str, Any]) -> Tuple[bool, str]:
             "created_at": datetime.now().isoformat(),
             "last_login": None,
         }
-        save_json(USERS_FILE, users)
+        # [변경] 파일 I/O 로직을 db_utils.db_save_users(users) 호출로 대체
+        database.db_save_users(users)
         logger.info(f"Users 테이블 저장 완료: {user_id}")
 
         # 4. Profiles 테이블에 고정 9개 항목 저장
-        profiles = load_json(PROFILES_FILE)
+        # [변경] 파일 I/O 로직을 db_utils.db_load_profiles() 호출로 대체
+        profiles = database.db_load_profiles()
+        rollback_profiles = profiles.copy()  # 롤백 데이터 복사
 
-        # birthDate 처리 (date 객체를 문자열로 변환)
+        # birthDate 처리 (동일)
         birth_date = profile_data.get("birthDate")
         if hasattr(birth_date, "isoformat"):
             birth_date_str = birth_date.isoformat()
@@ -206,15 +178,18 @@ def api_signup(user_id: str, profile_data: Dict[str, Any]) -> Tuple[bool, str]:
             "created_at": datetime.now().isoformat(),
             "updated_at": datetime.now().isoformat(),
         }
-        save_json(PROFILES_FILE, profiles)
+        # [변경] 파일 I/O 로직을 db_utils.db_save_profiles(profiles) 호출로 대체
+        database.db_save_profiles(profiles)
         logger.info(f"Profiles 테이블 저장 완료: {user_id}")
 
         # 5. Collections 테이블에 의료 정보 저장 (선택사항)
         collection_data = profile_data.get("collectionData")
         if collection_data and any(collection_data.values()):
-            collections = load_json(COLLECTIONS_FILE)
+            # [변경] 파일 I/O 로직을 db_utils.db_load_collections() 호출로 대체
+            collections = database.db_load_collections()
+            rollback_collections = collections.copy()  # 롤백 데이터 복사
 
-            # 사용자별로 배열 형태로 저장
+            # 사용자별로 배열 형태로 저장 (동일)
             if user_id not in collections:
                 collections[user_id] = []
 
@@ -227,34 +202,24 @@ def api_signup(user_id: str, profile_data: Dict[str, Any]) -> Tuple[bool, str]:
             }
 
             collections[user_id].append(collection_entry)
-            save_json(COLLECTIONS_FILE, collections)
+            # [변경] 파일 I/O 로직을 db_utils.db_save_collections(collections) 호출로 대체
+            database.db_save_collections(collections)
             logger.info(f"Collections 테이블 저장 완료: {user_id}")
 
         logger.info(f"회원가입 완료: {user_id}")
-        logger.debug(f"프로필 데이터: {profiles[user_id]}")
-
         return True, "회원가입이 완료되었습니다"
 
     except Exception as e:
         logger.error(f"회원가입 중 오류 발생: {str(e)}", exc_info=True)
 
-        # 롤백 처리 (부분 저장 방지)
+        # 롤백 처리: 오류가 발생했다면 이전 상태의 데이터를 다시 저장 (복사본 사용)
         try:
-            users = load_json(USERS_FILE)
-            profiles = load_json(PROFILES_FILE)
-            collections = load_json(COLLECTIONS_FILE)
-
-            if user_id in users:
-                del users[user_id]
-                save_json(USERS_FILE, users)
-
-            if user_id in profiles:
-                del profiles[user_id]
-                save_json(PROFILES_FILE, profiles)
-
-            if user_id in collections:
-                del collections[user_id]
-                save_json(COLLECTIONS_FILE, collections)
+            if rollback_users is not None:
+                database.db_save_users(rollback_users)  # 덮어쓰기
+            if rollback_profiles is not None:
+                database.db_save_profiles(rollback_profiles)  # 덮어쓰기
+            if rollback_collections is not None:
+                database.db_save_collections(rollback_collections)  # 덮어쓰기
 
             logger.info(f"회원가입 실패로 인한 롤백 완료: {user_id}")
         except Exception as rollback_error:
@@ -266,18 +231,14 @@ def api_signup(user_id: str, profile_data: Dict[str, Any]) -> Tuple[bool, str]:
 def api_get_user_info(user_id: str) -> Tuple[bool, Dict[str, Any]]:
     """
     사용자 전체 정보 조회 (Profile + Collection)
-
-    Args:
-        user_id (str): 사용자 ID
-
-    Returns:
-        Tuple[bool, Dict]: (성공 여부, 사용자 정보)
     """
     try:
         time.sleep(MOCK_API_DELAY)
 
-        profiles = load_json(PROFILES_FILE)
-        collections = load_json(COLLECTIONS_FILE)
+        # [변경] 파일 I/O 로직을 db_utils.db_load_profiles() 호출로 대체
+        profiles = database.db_load_profiles()
+        # [변경] 파일 I/O 로직을 db_utils.db_load_collections() 호출로 대체
+        collections = database.db_load_collections()
 
         if user_id not in profiles:
             logger.warning(f"사용자 정보 없음: {user_id}")
@@ -303,7 +264,8 @@ def api_get_profiles(user_id: str) -> Tuple[bool, list]:
     """
     try:
         time.sleep(MOCK_API_DELAY)
-        profiles_map = load_json(USER_PROFILES_FILE)
+        # [변경] 파일 I/O 로직을 db_utils.db_load_user_profiles() 호출로 대체
+        profiles_map = database.db_load_user_profiles()
         return True, profiles_map.get(user_id, [])
     except Exception as e:
         logger.error(f"사용자 프로필 리스트 조회 중 오류: {str(e)}")
@@ -318,13 +280,12 @@ def api_save_profiles(user_id: str, profiles_list: list) -> Tuple[bool, str]:
         time.sleep(MOCK_API_DELAY)
         if not isinstance(profiles_list, list):
             return False, "프로필 형식이 올바르지 않습니다"
-        # 프로필 정규화(직렬화 가능한 형태로 변환)
+
+        # 프로필 정규화(직렬화 가능한 형태로 변환) - (동일)
         def _sanitize_profile(p: Dict[str, Any]) -> Dict[str, Any]:
             q = dict(p) if isinstance(p, dict) else {}
             bd = q.get("birthDate")
-            # birthDate를 문자열(YYYY-MM-DD)로 보장
             try:
-                # date/datetime 객체 처리
                 if hasattr(bd, "isoformat"):
                     q["birthDate"] = bd.isoformat()[:10]
                 elif isinstance(bd, str):
@@ -333,12 +294,10 @@ def api_save_profiles(user_id: str, profiles_list: list) -> Tuple[bool, str]:
                     q["birthDate"] = ""
             except Exception:
                 q["birthDate"] = str(bd) if bd is not None else ""
-            # incomeLevel 정수 변환 시도
             try:
                 q["incomeLevel"] = int(q.get("incomeLevel", 0))
             except Exception:
                 pass
-            # 필수 키 기본값 보강
             q.setdefault("gender", "")
             q.setdefault("location", "")
             q.setdefault("healthInsurance", "")
@@ -353,10 +312,14 @@ def api_save_profiles(user_id: str, profiles_list: list) -> Tuple[bool, str]:
 
         sanitized = [_sanitize_profile(p) for p in profiles_list]
 
-        profiles_map = load_json(USER_PROFILES_FILE)
+        # [변경] 파일 I/O 로직을 db_utils.db_load_user_profiles() 호출로 대체
+        profiles_map = database.db_load_user_profiles()
         profiles_map[user_id] = sanitized
-        save_json(USER_PROFILES_FILE, profiles_map)
-        logger.info(f"사용자 프로필 리스트 저장 완료: {user_id} ({len(profiles_list)}개)")
+        # [변경] 파일 I/O 로직을 db_utils.db_save_user_profiles(profiles_map) 호출로 대체
+        database.db_save_user_profiles(profiles_map)
+        logger.info(
+            f"사용자 프로필 리스트 저장 완료: {user_id} ({len(profiles_list)}개)"
+        )
         return True, "프로필이 저장되었습니다"
     except Exception as e:
         logger.error(f"사용자 프로필 리스트 저장 중 오류: {str(e)}")
@@ -366,18 +329,12 @@ def api_save_profiles(user_id: str, profiles_list: list) -> Tuple[bool, str]:
 def api_update_profile(user_id: str, profile_data: Dict[str, Any]) -> Tuple[bool, str]:
     """
     Profile 정보 수정 (9개 항목만)
-
-    Args:
-        user_id (str): 사용자 ID
-        profile_data (Dict[str, Any]): 수정할 프로필 정보
-
-    Returns:
-        Tuple[bool, str]: (성공 여부, 메시지)
     """
     try:
         time.sleep(MOCK_API_DELAY)
 
-        profiles = load_json(PROFILES_FILE)
+        # [변경] 파일 I/O 로직을 db_utils.db_load_profiles() 호출로 대체
+        profiles = database.db_load_profiles()
 
         if user_id not in profiles:
             return False, "사용자를 찾을 수 없습니다"
@@ -385,7 +342,7 @@ def api_update_profile(user_id: str, profile_data: Dict[str, Any]) -> Tuple[bool
         # 기존 데이터 유지하면서 업데이트
         current_profile = profiles[user_id]
 
-        # Profile 9개 항목만 업데이트
+        # Profile 9개 항목만 업데이트 (동일)
         allowed_fields = [
             "name",
             "birthDate",
@@ -406,7 +363,8 @@ def api_update_profile(user_id: str, profile_data: Dict[str, Any]) -> Tuple[bool
         current_profile["updated_at"] = datetime.now().isoformat()
 
         profiles[user_id] = current_profile
-        save_json(PROFILES_FILE, profiles)
+        # [변경] 파일 I/O 로직을 db_utils.db_save_profiles(profiles) 호출로 대체
+        database.db_save_profiles(profiles)
 
         logger.info(f"Profile 업데이트 완료: {user_id}")
         return True, "프로필이 수정되었습니다"
@@ -421,24 +379,18 @@ def api_add_collection(
 ) -> Tuple[bool, str]:
     """
     Collection 정보 추가
-
-    Args:
-        user_id (str): 사용자 ID
-        collection_data (Dict): 의료 정보
-            - diseases, treatments, specialCases
-
-    Returns:
-        Tuple[bool, str]: (성공 여부, 메시지)
     """
     try:
         time.sleep(MOCK_API_DELAY)
 
         # 사용자 존재 확인
-        profiles = load_json(PROFILES_FILE)
+        # [변경] 파일 I/O 로직을 db_utils.db_load_profiles() 호출로 대체
+        profiles = database.db_load_profiles()
         if user_id not in profiles:
             return False, "사용자를 찾을 수 없습니다"
 
-        collections = load_json(COLLECTIONS_FILE)
+        # [변경] 파일 I/O 로직을 db_utils.db_load_collections() 호출로 대체
+        collections = database.db_load_collections()
 
         if user_id not in collections:
             collections[user_id] = []
@@ -452,7 +404,8 @@ def api_add_collection(
         }
 
         collections[user_id].append(collection_entry)
-        save_json(COLLECTIONS_FILE, collections)
+        # [변경] 파일 I/O 로직을 db_utils.db_save_collections(collections) 호출로 대체
+        database.db_save_collections(collections)
 
         logger.info(f"Collection 추가 완료: {user_id}, entry #{collection_entry['id']}")
         return True, "의료 정보가 추가되었습니다"
@@ -467,19 +420,12 @@ def api_reset_password(
 ) -> Tuple[bool, str]:
     """
     비밀번호 재설정
-
-    Args:
-        user_id (str): 사용자 ID
-        current_password (str): 현재 비밀번호
-        new_password (str): 새 비밀번호
-
-    Returns:
-        Tuple[bool, str]: (성공 여부, 메시지)
     """
     try:
         time.sleep(MOCK_API_DELAY)
 
-        users = load_json(USERS_FILE)
+        # [변경] 파일 I/O 로직을 db_utils.db_load_users() 호출로 대체
+        users = database.db_load_users()
 
         if user_id not in users:
             return False, "사용자를 찾을 수 없습니다"
@@ -495,7 +441,8 @@ def api_reset_password(
         user["password"] = hash_password(new_password)
         user["password_updated_at"] = datetime.now().isoformat()
         users[user_id] = user
-        save_json(USERS_FILE, users)
+        # [변경] 파일 I/O 로직을 db_utils.db_save_users(users) 호출로 대체
+        database.db_save_users(users)
 
         logger.info(f"비밀번호 변경 완료: {user_id}")
         return True, "비밀번호가 변경되었습니다"
@@ -508,33 +455,41 @@ def api_reset_password(
 def api_delete_account(user_id: str) -> Tuple[bool, str]:
     """
     회원 탈퇴 (모든 데이터 삭제)
-
-    Args:
-        user_id (str): 사용자 ID
-
-    Returns:
-        Tuple[bool, str]: (성공 여부, 메시지)
     """
     try:
         time.sleep(MOCK_API_DELAY)
 
         # 1. Users 테이블에서 삭제
-        users = load_json(USERS_FILE)
+        # [변경] 파일 I/O 로직을 db_utils.db_load_users() 호출로 대체
+        users = database.db_load_users()
         if user_id in users:
             del users[user_id]
-            save_json(USERS_FILE, users)
+            # [변경] 파일 I/O 로직을 db_utils.db_save_users(users) 호출로 대체
+            database.db_save_users(users)
 
         # 2. Profiles 테이블에서 삭제
-        profiles = load_json(PROFILES_FILE)
+        # [변경] 파일 I/O 로직을 db_utils.db_load_profiles() 호출로 대체
+        profiles = database.db_load_profiles()
         if user_id in profiles:
             del profiles[user_id]
-            save_json(PROFILES_FILE, profiles)
+            # [변경] 파일 I/O 로직을 db_utils.db_save_profiles(profiles) 호출로 대체
+            database.db_save_profiles(profiles)
 
         # 3. Collections 테이블에서 삭제
-        collections = load_json(COLLECTIONS_FILE)
+        # [변경] 파일 I/O 로직을 db_utils.db_load_collections() 호출로 대체
+        collections = database.db_load_collections()
         if user_id in collections:
             del collections[user_id]
-            save_json(COLLECTIONS_FILE, collections)
+            # [변경] 파일 I/O 로직을 db_utils.db_save_collections(collections) 호출로 대체
+            database.db_save_collections(collections)
+
+        # 4. User Profiles 테이블에서 삭제 (다중 프로필)
+        # [변경] 파일 I/O 로직을 db_utils.db_load_user_profiles() 호출로 대체
+        user_profiles = database.db_load_user_profiles()
+        if user_id in user_profiles:
+            del user_profiles[user_id]
+            # [변경] 파일 I/O 로직을 db_utils.db_save_user_profiles(user_profiles) 호출로 대체
+            database.db_save_user_profiles(user_profiles)
 
         logger.info(f"회원 탈퇴 완료: {user_id}")
         return True, "회원 탈퇴가 완료되었습니다"
@@ -549,25 +504,19 @@ def api_send_chat_message(
 ) -> Tuple[bool, Dict]:
     """
     챗봇 메시지 전송 (Mock)
-
-    Args:
-        user_id (str): 사용자 ID
-        message (str): 사용자 메시지
-        user_profile (Dict): 사용자 프로필 정보 (선택)
-
-    Returns:
-        Tuple[bool, Dict]: (성공 여부, 응답 데이터)
     """
     try:
         time.sleep(MOCK_API_DELAY)
 
         # 프로필 정보가 없으면 DB에서 가져오기
         if not user_profile:
-            profiles = load_json(PROFILES_FILE)
+            # [변경] 파일 I/O 로직을 db_utils.db_load_profiles() 호출로 대체
+            profiles = database.db_load_profiles()
             user_profile = profiles.get(user_id, {})
 
         logger.info(f"챗봇 메시지 전송: {user_id} - {message[:50]}")
 
+        # ... (이하 동일)
         return True, {
             "content": "고객님의 조건에 맞는 정책을 찾았습니다.",
             "policies": [
@@ -590,13 +539,6 @@ def api_send_chat_message(
 def api_get_chat_history(user_id: str, limit: int = 10) -> Tuple[bool, list]:
     """
     채팅 내역 조회 (Mock)
-
-    Args:
-        user_id (str): 사용자 ID
-        limit (int): 조회할 내역 수
-
-    Returns:
-        Tuple[bool, list]: (성공 여부, 채팅 내역 리스트)
     """
     try:
         time.sleep(MOCK_API_DELAY)

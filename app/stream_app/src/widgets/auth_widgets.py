@@ -1,7 +1,7 @@
 import streamlit as st
 import datetime
 from typing import Dict, Any
-from src.backend_service import (
+from app.stream_app.src.backend_service import (
     api_login,
     api_signup,
     api_check_id_availability,

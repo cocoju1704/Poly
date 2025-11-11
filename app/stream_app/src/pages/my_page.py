@@ -3,7 +3,7 @@ import time
 from datetime import date
 import streamlit as st
 from typing import Optional, Dict, Any
-from src.backend_service import api_get_profiles, api_save_profiles
+from app.stream_app.src.backend_service import api_get_profiles, api_save_profiles
 
 
 def _parse_birthdate(value):
@@ -118,7 +118,9 @@ def handle_save_edit(edited_data):
 def _get_user_id() -> Optional[str]:
     user_info = st.session_state.get("user_info", {})
     if isinstance(user_info, dict):
-        return user_info.get("userId") or st.session_state.get("login_data", {}).get("userId")
+        return user_info.get("userId") or st.session_state.get("login_data", {}).get(
+            "userId"
+        )
     return None
 
 
@@ -255,7 +257,11 @@ def render_my_page_modal():
                         "healthInsurance": health,
                         "incomeLevel": income,
                         "basicLivelihood": basic,
-                        "disabilityLevel": "0" if disability == "미등록" else ("1" if disability == "심한 장애" else "2"),
+                        "disabilityLevel": (
+                            "0"
+                            if disability == "미등록"
+                            else ("1" if disability == "심한 장애" else "2")
+                        ),
                         "longTermCare": longterm,
                         "pregnancyStatus": pregnancy,
                     }

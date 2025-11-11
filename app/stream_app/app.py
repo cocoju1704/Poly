@@ -1,9 +1,16 @@
+import asyncio
+import sys
+import os
 import streamlit as st
 from datetime import date
 import uuid
 import time
 import json
 import re
+
+# Windows에서 asyncio 이벤트 루프 정책 설정
+# if sys.platform == "win32":
+#     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
 from src.state_manger import initialize_session_state
 from src.pages.auth import (
@@ -16,24 +23,16 @@ from src.pages.auth import (
 from src.widgets.sidebar import render_sidebar
 from src.utils.template_loader import load_template, render_template, load_css
 from src.utils.session_manager import load_session, update_login_status
-
 from src.backend_service import (
     api_send_chat_message,
     api_reset_password,
     api_delete_account,
     api_get_user_info,
 )
-from src.pages.settings import (
-    render_settings_modal as render_settings_modal_external,
-    initialize_settings_state as initialize_settings_state_external,
-)
-from src.pages.my_page import render_my_page_modal as render_my_page_modal_external
-from src.pages.chat import render_chatbot_main as render_chatbot_main_external
 from src.backend_service import api_get_profiles
-from dotenv import load_dotenv
 
 
-load_dotenv()
+# load_dotenv()
 
 # ==============================================================================
 # 0. 전역 설정 및 CSS 주입
@@ -53,6 +52,9 @@ load_css("custom.css")
 # ==============================================================================
 # 1. 상태 초기화 (st.session_state)
 # ==============================================================================
+
+initialize_session_state()
+initialize_auth_state()
 
 if "profiles" not in st.session_state:
     st.session_state.profiles = []
@@ -76,7 +78,6 @@ if "newProfile" not in st.session_state:  # 프로필 추가 세션
     st.session_state.newProfile = {}
 if "editingData" not in st.session_state:
     st.session_state.editingData = {}
-initialize_settings_state_external()
 
 # 사이드바/챗봇 관련 상태
 # 대화 내용 검색 필드의 초기값 설정
@@ -167,11 +168,6 @@ SUGGESTED_QUESTIONS = [
 ]
 
 
-def render_chatbot_main():
-    # 외부 모듈에서 임포트된 함수 사용 (src.pages.chat)
-    render_chatbot_main_external()
-
-
 def main_app():
     # 사이드바 네비게이션 숨기기
     st.markdown(
@@ -186,9 +182,6 @@ def main_app():
         """,
         unsafe_allow_html=True,
     )
-
-    initialize_session_state()
-    initialize_auth_state()
 
     # 저장된 세션이 있으면 복원
     if not st.session_state.get("is_logged_in", False):
@@ -233,16 +226,22 @@ def main_app():
         # 로그인 상태
         # 사이드바 렌더링
         render_sidebar()
+        from src.pages.chat import render_chatbot_main
+        from src.pages.my_page import render_my_page_modal
+        from src.pages.settings import (
+            initialize_settings_state,
+            render_settings_modal,
+        )
 
         # 설정 모달과 마이페이지 모달은 동시에 열리지 않도록 처리
         if st.session_state.get("settings_modal_open", False):
             # 설정 모달이 열려있으면 마이페이지 닫기
             st.session_state["show_profile"] = False
-            render_settings_modal_external()
+            render_settings_modal()
         elif st.session_state.get("show_profile", False):
             # 마이페이지가 열려있으면 설정 모달 닫기
             st.session_state["settings_modal_open"] = False
-            render_my_page_modal_external()
+            render_my_page_modal()
         else:
             # 메인 챗봇 화면 (모달이 열려있지 않을 때만)
             render_chatbot_main()
@@ -267,4 +266,10 @@ def render_landing_page():
 
 
 if __name__ == "__main__":
+    from src.pages.settings import initialize_settings_state
+
+    # 상태 초기화는 앱 실행 초기에 한 번만 수행합니다.
+    if "settings_initialized" not in st.session_state:
+        initialize_settings_state()
+        st.session_state.settings_initialized = True
     main_app()

@@ -1,10 +1,8 @@
-"""채팅 렌더링/메시지 전송/정책 카드 파싱 11.10수정"""
+"""채팅 렌더링/메시지 전송/정책 카드 파싱 11.11수정"""
 import uuid
 import time
-import json
 import re
 import streamlit as st
-
 from src.widgets.policy_card import render_policy_card
 from src.utils.template_loader import load_template, render_template, load_css
 from src.llm_manager import get_llm_manager
@@ -19,21 +17,29 @@ SUGGESTED_QUESTIONS = [
 
 
 def _extract_policies_from_text(text: str):
-    try:
-        code_blocks = re.findall(r"```json\\s*([\\s\\S]*?)\\s*```", text, re.IGNORECASE)
-        for block in code_blocks:
-            data = json.loads(block)
-            if (
-                isinstance(data, dict)
-                and "policies" in data
-                and isinstance(data["policies"], list)
-            ):
-                return data["policies"]
-    except Exception:
-        pass
-    return []
+    """
+    이 함수는 더 이상 사용되지 않습니다. 항상 None을 반환합니다.
+    """
+    return None
 
 
+# def _extract_policies_from_text(text: str):
+#     try:
+#         code_blocks = re.findall(r"```json\\s*([\\s\\S]*?)\\s*```", text, re.IGNORECASE)
+#         for block in code_blocks:
+#             data = json.loads(block)
+#             if (
+#                 isinstance(data, dict)
+#                 and "policies" in data
+#                 and isinstance(data["policies"], list)
+#             ):
+#                 return data["policies"]
+#     except Exception:
+#         pass
+#     return []
+
+
+# 챗봇 메세지 응답 화면
 def handle_send_message(message: str):
     if not message.strip() or st.session_state.get("is_loading", False):
         return
@@ -92,6 +98,7 @@ def handle_send_message(message: str):
     st.rerun()
 
 
+# 챗봇 메인 페이지
 def render_chatbot_main():
     load_css("components/chat_messages.css")
     load_css("components/chat_ui.css")
