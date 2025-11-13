@@ -347,6 +347,20 @@ class DistrictCrawler(BaseParallelCrawler):
                 name, url, tab_links
             )
 
+            # 3-1. 탭 제목이 블랙리스트에 해당하는지 체크
+            if title_for_llm != name and config.KEYWORD_FILTER["mode"] != "none":
+                # 탭으로 제목이 변경된 경우, 블랙리스트 체크
+                passed, reason = self.link_filter.check_keyword_filter(
+                    title_for_llm,
+                    whitelist=config.KEYWORD_FILTER.get("whitelist"),
+                    blacklist=config.KEYWORD_FILTER.get("blacklist"),
+                    mode=config.KEYWORD_FILTER["mode"],
+                )
+                if not passed:
+                    log_buffer.append(f"  [SKIP] 탭 제목 필터링: {reason}")
+                    # 실패로 처리하지 않고 건너뜀
+                    raise ValueError(f"탭 제목이 블랙리스트에 해당: {title_for_llm} - {reason}")
+
             # 4. LLM 구조화
             log_buffer.append("    -> 내용 구조화 진행...")
 
