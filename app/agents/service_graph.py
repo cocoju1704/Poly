@@ -19,12 +19,16 @@ service_graph.py
 
 from __future__ import annotations
 
-import os
+import os, sys
 from datetime import datetime, timezone
 from typing import Any, Dict
 
+# 프로젝트 루트 경로를 sys.path에 추가
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+    
 from dotenv import load_dotenv
-
 load_dotenv()
 
 # LangGraph
@@ -294,6 +298,7 @@ if __name__ == "__main__":
     print("=== RUN 1 ===")
     out = app.invoke({
         "session_id": "sess-001",
+        "profile_id": 1,
         "user_input": "저는 중위소득 120%이고 당뇨가 있어요. 받을 수 있는 의료 지원이 궁금해요.",
         "messages": [{
             "role": "user",
@@ -310,6 +315,7 @@ if __name__ == "__main__":
     print("=== RUN 2 (END SESSION) ===")
     out2 = app.invoke({
         "session_id": "sess-001",
+        "profile_id": 1,
         "user_input": "오늘 대화 저장해줘.",
         "messages": out.get("messages"),
         "rolling_summary": out.get("rolling_summary"),
