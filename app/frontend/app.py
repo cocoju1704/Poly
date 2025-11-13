@@ -1,8 +1,9 @@
 """의료 혜택 정보 제공 에이전트 챗봇 메인 애플리케이션 파일 11.12 수정"""
+
 import streamlit as st
 
 from src.state_manger import initialize_session_state
-from src.pages.auth import (
+from src.pages.login import (
     initialize_auth_state,
     render_login_tab,
     render_signup_tab,
@@ -10,8 +11,7 @@ from src.pages.auth import (
 from src.widgets.sidebar import render_sidebar
 from src.utils.template_loader import render_template, load_css
 from src.utils.session_manager import load_session
-from src.backend_service import api_get_user_info
-from src.db.database import get_all_profiles_by_user_id
+from src.backend_service import backend_service
 
 from src.pages.chat import render_chatbot_main
 from src.pages.my_page import render_my_page_modal
@@ -41,7 +41,7 @@ load_css("custom.css")
 # ==============================================================================
 
 initialize_session_state()
-initialize_auth_state()
+# initialize_auth_state()
 
 if "profiles" not in st.session_state:
     st.session_state.profiles = []
@@ -175,26 +175,22 @@ def main_app():
         saved_session = load_session()
         if saved_session and saved_session.get("is_logged_in"):
             st.session_state["is_logged_in"] = True
-            st.session_state["user_info"] = saved_session.get("user_info", {})
-            # 프로필도 복원 (백엔드에서 조회)
-            user_uuid = saved_session.get("user_id")  # 세션에는 UUID가 저장됨
-            username = st.session_state.user_info.get("username")
-            if user_uuid and username:
-                # [수정] DB에서 직접 사용자 정보 조회
-                ok, user_info = api_get_user_info(user_uuid)  # UUID로 조회
+            st.session_state["auth_token"] = saved_session.get("auth_token")
+
+            if st.session_state["auth_token"]:
+                # 토큰으로 프로필 정보 복원
+                ok, user_info = backend_service.get_user_profile(
+                    st.session_state["auth_token"]
+                )
                 if ok:
                     st.session_state["user_info"] = user_info
-                    st.session_state["user_info"]["main_profile_id"] = user_info.get("main_profile_id")
-
-                # 사용자별 다중 프로필 리스트가 있으면 그걸로 대체
-                # api_get_profiles는 이제 DB를 조회하므로 그대로 사용 가능
-                if st.session_state.get("profiles") is None or not st.session_state.get(
-                    "profiles"
-                ):
-                    okp, profiles_list = get_all_profiles_by_user_id(user_uuid)
-                    if okp and profiles_list:
-                        st.session_state["profiles"] = profiles_list
-            # 세션 복원 완료
+                    # TODO: 다중 프로필을 지원하는 경우, 여기서 모든 프로필을 가져오는 API를 호출해야 합니다.
+                    # 현재는 기본 프로필만 가져옵니다.
+                    st.session_state["profiles"] = [user_info.get("profile")]
+                else:
+                    # 토큰이 만료되었거나 유효하지 않은 경우
+                    st.session_state["is_logged_in"] = False
+                    st.session_state["auth_token"] = None
 
     # 로그인 상태 확인
     if not st.session_state.get("is_logged_in", False):
