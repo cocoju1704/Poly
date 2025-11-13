@@ -16,7 +16,7 @@ import sys
 from datetime import datetime
 
 # 공통 모듈 import
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 import config
 import utils
 from utils import normalize_url

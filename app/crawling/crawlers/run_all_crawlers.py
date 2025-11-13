@@ -16,6 +16,10 @@ sys.path.insert(0, project_root)
 try:
     # 이제 최상위 경로가 포함되었으므로, 절대 경로로 임포트합니다.
     from app.crawling.crawlers.district_crawler import DistrictCrawler
+    from app.crawling.crawlers.specific_crawler.songpa_crawler import SongpaCrawler
+    from app.crawling.crawlers.specific_crawler.yangcheon_crawler import YangcheonCrawler
+    from app.crawling.crawlers.specific_crawler.ydp_crawler import YdpCrawler
+    from app.crawling.crawlers.specific_crawler.yongsan_crawler import YongsanCrawler
     from app.crawling import utils
 except ImportError as e:
     print("=" * 80)
@@ -78,12 +82,39 @@ def run_batch_crawling():
             output_dir_for_region = os.path.join(base_output_dir, region_name)
             os.makedirs(output_dir_for_region, exist_ok=True)
 
-            # 워크플로우 인스턴스 생성 및 실행 (병렬 처리 활성화)
-            workflow = DistrictCrawler(
-                output_dir=output_dir_for_region,
-                region=region_name,
-                max_workers=4  # 각 보건소 처리 시 4개 페이지를 병렬로 처리
-            )
+            # 지역별 전용 크롤러 선택
+            if "songpa" in url.lower():
+                workflow = SongpaCrawler(
+                    start_url=url,
+                    output_dir=output_dir_for_region,
+                    max_workers=4
+                )
+            elif "yangcheon" in url.lower():
+                workflow = YangcheonCrawler(
+                    start_url=url,
+                    output_dir=output_dir_for_region,
+                    max_workers=4
+                )
+            elif "ydp" in url.lower():
+                workflow = YdpCrawler(
+                    start_url=url,
+                    output_dir=output_dir_for_region,
+                    max_workers=4
+                )
+            elif "yongsan" in url.lower():
+                workflow = YongsanCrawler(
+                    start_url=url,
+                    output_dir=output_dir_for_region,
+                    max_workers=4
+                )
+            else:
+                # 기본 district_crawler 사용
+                workflow = DistrictCrawler(
+                    output_dir=output_dir_for_region,
+                    region=region_name,
+                    max_workers=4
+                )
+
             summary = workflow.run(start_url=url)
 
             print(f"[{i}/{len(target_urls)}] '{region_name}' 보건소 워크플로우 완료.")

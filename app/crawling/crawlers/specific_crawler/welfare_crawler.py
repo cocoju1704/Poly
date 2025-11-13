@@ -7,6 +7,7 @@
 - 각 서비스 상세 정보 크롤링 및 구조화
 """
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from bs4 import BeautifulSoup
 import json
 import re
@@ -16,10 +17,8 @@ import sys
 from datetime import datetime
 
 # 공통 모듈 import
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 import config
-import utils
-from utils import normalize_url
 from base.parallel_crawler import BaseParallelCrawler
 
 
@@ -316,7 +315,10 @@ class WelfareCrawler(BaseParallelCrawler):
             # 모든 작업 제출
             future_to_service = {
                 executor.submit(
-                    self._process_service_with_tabs, service_info, idx, len(services_to_process)
+                    self._process_service_with_tabs,
+                    service_info,
+                    idx,
+                    len(services_to_process),
                 ): service_info
                 for idx, service_info in enumerate(services_to_process, 1)
             }

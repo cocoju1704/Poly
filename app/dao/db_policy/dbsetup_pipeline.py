@@ -16,8 +16,12 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from app.crawling.crawlers.district_crawler import DistrictCrawler
-from app.crawling.crawlers.welfare_crawler import WelfareCrawler
-from app.crawling.crawlers.ehealth_crawler import EHealthCrawler
+from app.crawling.crawlers.specific_crawler.welfare_crawler import WelfareCrawler
+from app.crawling.crawlers.specific_crawler.ehealth_crawler import EHealthCrawler
+from app.crawling.crawlers.specific_crawler.songpa_crawler import SongpaCrawler
+from app.crawling.crawlers.specific_crawler.yangcheon_crawler import YangcheonCrawler
+from app.crawling.crawlers.specific_crawler.ydp_crawler import YdpCrawler
+from app.crawling.crawlers.specific_crawler.yongsan_crawler import YongsanCrawler
 from app.crawling.crawlers import run_all_crawlers as rac
 from app.dao.db_policy import dbuploader_policy as dbuploader
 from app.dao.db_policy import dbgrouper_policy as dbgrouper
