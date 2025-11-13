@@ -126,6 +126,7 @@ class LLMStructuredCrawler(BaseCrawler):
             ".article",
             "[role='main']",
             ".s_con_right",
+            ".content-container",
         ]:
             content_area = soup_copy.select_one(selector)
             if content_area:
