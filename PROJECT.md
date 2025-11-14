@@ -249,6 +249,8 @@ app/frontend/
 - **필드 매핑**:
   - 프론트엔드 `email` → DB `users.username` (아이디)
   - 프론트엔드 `username` → DB `profiles.name` (사용자 이름)
+  - 프론트엔드 `user_id` → DB `users.username` (아이디)
+  - 프론트엔드 `name` → DB `profiles.name` (사용자 이름)
   - 프론트엔드 `password` → DB `users.password_hash` (해시된 비밀번호)
 
 ### 3.2 데이터베이스 계층 상세 (`app/db/`)
