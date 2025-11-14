@@ -11,6 +11,8 @@ python-multipart>=0.0.6
 python-jose[cryptography]>=3.3.0
  <br />
 passlib[bcrypt]>=1.7.4
+<br/>
+pydantic[email]==2.11.7
 
 
 
@@ -33,4 +35,3 @@ pip install jose
 pip install --upgrade python-jose
 <br/>
 pip install --upgrade -r requirements.txt
-
