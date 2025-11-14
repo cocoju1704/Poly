@@ -4,7 +4,11 @@
 
 import os
 import sys
+import time
 import traceback
+from app.crawling import utils
+from app.crawling.crawler_factory import get_crawler_for_url
+
 
 # 이 파일의 위치(app/crawling/crawlers)를 기준으로
 # 프로젝트 최상위 경로(HealthInformer)를 찾아 시스템 경로에 추가합니다.
@@ -12,22 +16,6 @@ project_root = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "..", "..", "..")
 )
 sys.path.insert(0, project_root)
-
-try:
-    # 이제 최상위 경로가 포함되었으므로, 절대 경로로 임포트합니다.
-    from app.crawling.crawlers.district_crawler import DistrictCrawler
-    from app.crawling.crawlers.specific_crawler.songpa_crawler import SongpaCrawler
-    from app.crawling.crawlers.specific_crawler.yangcheon_crawler import YangcheonCrawler
-    from app.crawling.crawlers.specific_crawler.ydp_crawler import YdpCrawler
-    from app.crawling.crawlers.specific_crawler.yongsan_crawler import YongsanCrawler
-    from app.crawling import utils
-except ImportError as e:
-    print("=" * 80)
-    print("오류: 필요한 모듈을 임포트할 수 없습니다.")
-    print("스크립트의 위치나 프로젝트 구조가 변경되었는지 확인하세요.")
-    print(f"상세 오류: {e}")
-    print("=" * 80)
-    sys.exit(1)
 
 
 def run_batch_crawling():
@@ -47,13 +35,20 @@ def run_batch_crawling():
         "https://www.gwanak.go.kr/site/health/05/10502010600002024101710.jsp",  # 관악구
         "https://www.gwangjin.go.kr/health/main/contents.do?menuNo=300080",  # 광진구
         "https://www.guro.go.kr/health/contents.do?key=1320&",  # 구로구
+        "https://health.dobong.go.kr/Contents.asp?code=10005042",  # 도봉구
+        "https://www.ddm.go.kr/health/contents.do?key=1257",  # 동대문구
         "https://www.dongjak.go.kr/healthcare/main/contents.do?menuNo=300342",  # 동작구
         "https://www.sdm.go.kr/health/contents/infectious/law",  # 서대문구
         "https://www.seocho.go.kr/site/sh/03/10301000000002015070902.jsp",  # 서초구
         "https://www.sb.go.kr/bogunso/contents.do?key=6553",  # 성북구
+        "https://www.yangcheon.go.kr/health/health/02/10201010000002024022101.jsp",  # 양천구
         "https://www.ydp.go.kr/health/contents.do?key=6073&",  # 영등포구
+        "https://www.yongsan.go.kr/health/main/contents.do?menuNo=300064",  # 용산구
+        "https://www.ep.go.kr/health/contents.do?key=1582",  # 은평구
         "https://www.songpa.go.kr/ehealth/contents.do?key=4525&",  # 송파구
         "https://jongno.go.kr/Health.do?menuId=401309&menuNo=401309",  # 종로구
+        "https://www.junggu.seoul.kr/health/content.do?cmsid=15845",  # 중구
+        "https://www.jungnang.go.kr/health/bbs/list/B0000412.do?menuNo=400364#n",  # 중랑구
     ]
 
     # 절대 경로를 사용하여 output 디렉토리 위치를 명확히 지정합니다.
@@ -61,7 +56,6 @@ def run_batch_crawling():
     print(f"총 {len(target_urls)}개의 보건소에 대한 크롤링을 시작합니다.")
     print("=" * 80)
 
-    import time
     batch_start_time = time.time()
 
     # 각 URL에 대해 워크플로우 실행
@@ -82,38 +76,12 @@ def run_batch_crawling():
             output_dir_for_region = os.path.join(base_output_dir, region_name)
             os.makedirs(output_dir_for_region, exist_ok=True)
 
-            # 지역별 전용 크롤러 선택
-            if "songpa" in url.lower():
-                workflow = SongpaCrawler(
-                    start_url=url,
-                    output_dir=output_dir_for_region,
-                    max_workers=4
-                )
-            elif "yangcheon" in url.lower():
-                workflow = YangcheonCrawler(
-                    start_url=url,
-                    output_dir=output_dir_for_region,
-                    max_workers=4
-                )
-            elif "ydp" in url.lower():
-                workflow = YdpCrawler(
-                    start_url=url,
-                    output_dir=output_dir_for_region,
-                    max_workers=4
-                )
-            elif "yongsan" in url.lower():
-                workflow = YongsanCrawler(
-                    start_url=url,
-                    output_dir=output_dir_for_region,
-                    max_workers=4
-                )
-            else:
-                # 기본 district_crawler 사용
-                workflow = DistrictCrawler(
-                    output_dir=output_dir_for_region,
-                    region=region_name,
-                    max_workers=4
-                )
+            # 크롤러 팩토리 사용 (URL만으로 자동 선택)
+            workflow = get_crawler_for_url(
+                url=url,
+                output_dir=output_dir_for_region,
+                max_workers=4,
+            )
 
             summary = workflow.run(start_url=url)
 
@@ -135,7 +103,7 @@ def run_batch_crawling():
 
     print("\n" + "=" * 80)
     print("모든 보건소 크롤링 작업이 완료되었습니다.")
-    print(f"총 실행 시간: {batch_duration:.2f}초 ({batch_duration/60:.2f}분)")
+    print(f"총 실행 시간: {batch_duration:.2f}초 ({batch_duration / 60:.2f}분)")
     print("=" * 80)
 
     # 전체 통계 출력
