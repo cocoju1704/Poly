@@ -1,17 +1,19 @@
 """
-구별 특수 크롤러 모듈
+특정 구별 크롤러 모듈
 """
 
+from .district_menu_crawler import DistrictMenuCrawler
 from .songpa_crawler import SongpaCrawler
 from .yangcheon_crawler import YangcheonCrawler
-from .district_menu_crawler import DistrictMenuCrawler
 from .ehealth_crawler import EHealthCrawler
 from .welfare_crawler import WelfareCrawler
+from . import district_configs
 
 __all__ = [
+    "DistrictMenuCrawler",
     "SongpaCrawler",
     "YangcheonCrawler",
-    "DistrictMenuCrawler",
     "EHealthCrawler",
     "WelfareCrawler",
+    "district_configs",
 ]

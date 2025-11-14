@@ -1,37 +1,68 @@
 """
-중랑구 보건소 메뉴 수집 Strategy
+중랑구 메뉴 수집 전략
+sub-menu 구조, depth1~3
 """
 
+from .base_strategy import BaseMenuStrategy
 from bs4 import BeautifulSoup
-from typing import List, Dict, Set
-from ....utils import extract_link_from_element
+from typing import List, Dict
+from urllib.parse import urljoin
 
 
-def collect_menu_links(soup: BeautifulSoup, start_url: str) -> List[Dict]:
-    """
-    중랑구 메뉴에서 링크 수집
+class JungnangStrategy(BaseMenuStrategy):
+    """중랑구 전용 메뉴 수집 전략"""
 
-    Args:
-        soup: BeautifulSoup 객체
-        start_url: 시작 URL
+    def collect_links(self, soup: BeautifulSoup, base_url: str) -> List[Dict]:
+        """
+        중랑구 sub-menu 구조에서 링크 수집
+        depth1, depth2, depth3(sb-depth4)를 수집
+        """
+        collected_links = []
 
-    Returns:
-        수집된 링크 목록
-    """
-    collected_links = []
-    seen_urls = set()
+        # Step 1: ul.sub-menu 찾기
+        sub_menu = soup.select_one("ul.sub-menu")
+        if not sub_menu:
+            print("  [중랑구] ul.sub-menu를 찾을 수 없습니다.")
+            return []
 
-    # 중랑구 메뉴 선택자
-    menu_selector = ".lnb ul li a"
+        print("  [중랑구] ul.sub-menu 발견")
 
-    base_url = start_url.split("?")[0].rsplit("/", 1)[0]
+        # Step 2: depth1 링크 수집 (a.ym1)
+        depth1_elements = sub_menu.select("li > a.ym1")
+        for element in depth1_elements:
+            href = element.get("href", "")
+            if self._is_valid_href(href):
+                name = self._extract_text(element)
+                url = urljoin(base_url, href)
+                collected_links.append(self._make_link_dict(name, url, 1))
 
-    menu_links = soup.select(menu_selector)
+        # Step 3: depth2 링크 수집 (하위에 sb-depth4가 없는 것만)
+        depth2_containers = sub_menu.select("ul.sb-depth3 > li")
+        for li in depth2_containers:
+            has_depth4 = li.select_one("ul.sb-depth4") is not None
+            if not has_depth4:
+                a_tag = li.find("a", recursive=False)
+                if a_tag:
+                    href = a_tag.get("href", "")
+                    if self._is_valid_href(href):
+                        name = self._extract_text(a_tag)
+                        url = urljoin(base_url, href)
+                        collected_links.append(self._make_link_dict(name, url, 2))
 
-    for link_element in menu_links:
-        link_info = extract_link_from_element(link_element, base_url, seen_urls)
-        if link_info:
-            collected_links.append(link_info)
+        # Step 4: depth3 링크 수집 (ul.sb-depth4 > li > a)
+        depth3_elements = sub_menu.select("ul.sb-depth4 > li > a")
+        for element in depth3_elements:
+            href = element.get("href", "")
+            if self._is_valid_href(href):
+                name = self._extract_text(element)
+                url = urljoin(base_url, href)
+                collected_links.append(self._make_link_dict(name, url, 3))
 
-    print(f"  [중랑구 Strategy] {len(collected_links)}개 링크 수집")
-    return collected_links
+        print(
+            f"  [중랑구] 총 {len(collected_links)}개 링크 수집 "
+            f"(depth1: {len([l for l in collected_links if l['depth_level'] == 1])}, "
+            f"depth2: {len([l for l in collected_links if l['depth_level'] == 2])}, "
+            f"depth3: {len([l for l in collected_links if l['depth_level'] == 3])})"
+        )
+
+        return collected_links

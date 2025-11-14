@@ -13,13 +13,10 @@ import json
 import re
 from typing import List, Dict, Optional
 import os
-import sys
 from datetime import datetime
 
-# 공통 모듈 import
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-import config
-from base.parallel_crawler import BaseParallelCrawler
+from ... import config
+from ...base.parallel_crawler import BaseParallelCrawler
 
 
 class WelfareCrawler(BaseParallelCrawler):

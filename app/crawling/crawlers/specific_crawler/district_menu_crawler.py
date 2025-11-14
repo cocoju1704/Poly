@@ -1,78 +1,174 @@
 """
-통합 메뉴 크롤러 - 6개 구 대응
-은평구, 강동구, 종로구, 중랑구, 영등포구, 용산구
+통합 구별 메뉴 크롤러 (Strategy Pattern 버전)
 
-각 구별 Strategy 패턴을 사용하여 메뉴 수집 방식을 동적으로 선택
+각 구의 메뉴 수집 로직을 Strategy 클래스에 위임하여 코드 단순화
 """
 
 from ..district_crawler import DistrictCrawler
+from bs4 import BeautifulSoup
 from typing import List, Dict
-from .district_configs import DISTRICT_CONFIGS
+from ...utils import normalize_url
+from .district_configs import get_config, GLOBAL_BLACKLIST_KEYWORDS
 
 
 class DistrictMenuCrawler(DistrictCrawler):
-    """통합 메뉴 크롤러 - Strategy 패턴 사용"""
+    """설정 기반 통합 구별 메뉴 크롤러 (Strategy Pattern)"""
 
     def __init__(
         self,
         district_name: str,
-        start_url: str = None,
+        start_url: str,
         output_dir: str = None,
-        max_workers: int = 4,
+        max_workers: int = None,
     ):
         """
         Args:
             district_name: 구 이름 (예: "은평구", "강동구")
-            start_url: 시작 URL (None이면 config에서 가져옴)
-            output_dir: 출력 디렉토리 (None이면 config에서 가져옴)
-            max_workers: 병렬 처리 worker 수
+            start_url: 크롤링 시작 URL
+            output_dir: 출력 디렉토리 (None이면 설정에서 가져옴)
+            max_workers: 병렬 처리 worker 수 (None이면 설정에서 가져옴)
         """
-        # district config 가져오기
-        if district_name not in DISTRICT_CONFIGS:
-            raise ValueError(
-                f"지원하지 않는 구: {district_name}. "
-                f"지원 구: {list(DISTRICT_CONFIGS.keys())}"
+        # 설정 로드
+        self.config = get_config(district_name)
+
+        # output_dir과 max_workers 설정
+        if output_dir is None:
+            output_dir = self.config.get(
+                "output_dir", f"app/crawling/output/{district_name}"
             )
+        if max_workers is None:
+            max_workers = self.config.get("max_workers", 4)
 
-        config = DISTRICT_CONFIGS[district_name]
-
-        # 기본값 설정
-        self.district_name = district_name
-        self.start_url = start_url or config["start_url"]
-        final_output_dir = output_dir or config["output_dir"]
-
-        # 부모 초기화
         super().__init__(
-            output_dir=final_output_dir, region=district_name, max_workers=max_workers
+            output_dir=output_dir, region=district_name, max_workers=max_workers
         )
 
-        # Strategy 로드
-        self._load_strategy(config["strategy"])
+        self.district_name = district_name
+        self.start_url = start_url
 
-    def _load_strategy(self, strategy_name: str):
+        # Strategy 인스턴스 생성
+        strategy_class = self.config["strategy_class"]
+        filter_text = self.config.get("filter_text")
+        self.strategy = strategy_class(filter_text=filter_text)
+
+        # 전역 블랙리스트 사용
+        self.blacklist_keywords = GLOBAL_BLACKLIST_KEYWORDS
+        self.depth_scores = self.config.get("depth_scores", {})
+
+    def _get_link_specificity(self, link: Dict) -> int:
         """
-        동적으로 strategy 모듈을 로드하여 collect_menu_links 함수 가져오기
+        링크의 구체성 레벨 계산
+        depth 레벨에 따른 우선순위 부여
 
         Args:
-            strategy_name: strategy 모듈명 (예: "ep_strategy")
-        """
-        try:
-            # 동적 import
-            strategy_module = __import__(
-                f"app.crawling.crawlers.specific_crawler.strategies.{strategy_name}",
-                fromlist=["collect_menu_links"],
-            )
-            self.collect_menu_links_func = strategy_module.collect_menu_links
-            print(f"[{self.district_name}] Strategy 로드 완료: {strategy_name}")
+            link: 링크 정보 (name, url, depth_level 포함)
 
-        except ImportError as e:
-            raise ImportError(
-                f"Strategy 모듈을 찾을 수 없습니다: {strategy_name}. 오류: {e}"
-            )
-        except AttributeError:
-            raise AttributeError(
-                f"Strategy 모듈 '{strategy_name}'에 collect_menu_links 함수가 없습니다."
-            )
+        Returns:
+            구체성 레벨 (높을수록 구체적)
+        """
+        name = link.get("name", "")
+        depth_level = link.get("depth_level", 0)
+
+        # 기본 점수: 이름 길이 (구체적인 제목일수록 길다)
+        specificity = len(name)
+
+        # depth 점수 추가
+        if depth_level in self.depth_scores:
+            specificity += self.depth_scores[depth_level]
+
+        return specificity
+
+    def _collect_links_from_menu(
+        self, soup: BeautifulSoup, base_url: str
+    ) -> List[Dict]:
+        """
+        Strategy를 사용한 메뉴 링크 수집
+
+        Returns:
+            수집된 링크 목록 (depth_level 포함)
+        """
+        print(f"\n[{self.district_name}] Strategy를 사용한 링크 수집...")
+
+        # Strategy에 링크 수집 위임
+        collected_links = self.strategy.collect_links(soup, base_url)
+
+        return collected_links
+
+    def _apply_blacklist_filter(self, links: List[Dict]) -> List[Dict]:
+        """
+        블랙리스트 키워드 필터 적용
+
+        Returns:
+            필터링된 링크 목록
+        """
+        if not self.blacklist_keywords:
+            return links
+
+        filtered_links = []
+        excluded_count = 0
+
+        for link in links:
+            name = link["name"]
+            should_exclude = False
+
+            # 블랙리스트 키워드 체크
+            for keyword in self.blacklist_keywords:
+                if keyword in name:
+                    print(f"    ✗ 블랙리스트 제외: '{name}' (키워드: '{keyword}')")
+                    excluded_count += 1
+                    should_exclude = True
+                    break
+
+            if not should_exclude:
+                filtered_links.append(link)
+
+        if excluded_count > 0:
+            print(f"\n  [필터링 결과] {excluded_count}개 링크 제외됨")
+
+        return filtered_links
+
+    def _deduplicate_by_specificity(self, links: List[Dict]) -> List[Dict]:
+        """
+        중복 URL 제거 (더 구체적인 제목 우선)
+
+        Returns:
+            중복이 제거된 링크 목록
+        """
+        url_to_links = {}
+
+        # 같은 URL의 링크들을 그룹화
+        for link in links:
+            normalized_url = normalize_url(link["url"])
+            if normalized_url not in url_to_links:
+                url_to_links[normalized_url] = []
+            url_to_links[normalized_url].append(link)
+
+        final_links = []
+
+        # 각 URL 그룹에서 가장 구체적인 링크 선택
+        for normalized_url, link_group in url_to_links.items():
+            if len(link_group) == 1:
+                # 중복 없음
+                final_links.append(link_group[0])
+            else:
+                # 중복 있음 - 구체성 기준으로 정렬하여 가장 구체적인 것 선택
+                sorted_links = sorted(
+                    link_group, key=self._get_link_specificity, reverse=True
+                )
+                best_link = sorted_links[0]
+                final_links.append(best_link)
+
+                # 중복 로그 출력
+                print(f"\n  [중복 URL 발견] {normalized_url}")
+                print(
+                    f"    ✓ 선택: '{best_link['name']}' (depth{best_link.get('depth_level', 0)}, 구체성: {self._get_link_specificity(best_link)})"
+                )
+                for excluded_link in sorted_links[1:]:
+                    print(
+                        f"    ✗ 제외: '{excluded_link['name']}' (depth{excluded_link.get('depth_level', 0)}, 구체성: {self._get_link_specificity(excluded_link)})"
+                    )
+
+        return final_links
 
     def collect_initial_items(
         self,
@@ -83,12 +179,12 @@ class DistrictMenuCrawler(DistrictCrawler):
         **kwargs,
     ) -> List[Dict]:
         """
-        초기 링크 수집 (구별 strategy 사용)
+        링크 수집 및 필터링 (Strategy Pattern 사용)
 
         Returns:
-            수집된 링크 목록
+            필터링된 링크 목록
         """
-        print(f"\n[1단계] {self.district_name} 메뉴 링크 수집 중...")
+        print(f"\n[1단계] {self.district_name} 링크 수집 시작...")
         print(f"  시작 URL: {start_url}")
         print("-" * 80)
 
@@ -98,44 +194,44 @@ class DistrictMenuCrawler(DistrictCrawler):
             print(f"오류: 시작 URL({start_url})에 접근할 수 없습니다.")
             return []
 
-        # Strategy 패턴: 각 구별 메뉴 수집 로직 실행
-        initial_links = self.collect_menu_links_func(soup, start_url)
+        base_url = start_url.split("?")[0].rsplit("/", 1)[0]
 
-        print(f"\n[SUCCESS] 총 {len(initial_links)}개의 초기 링크 수집 완료")
+        # Strategy를 사용한 링크 수집
+        print(f"\n[1.1단계] {self.district_name} Strategy로 링크 수집...")
+        all_links = self._collect_links_from_menu(soup, base_url)
 
-        # 키워드 필터링
-        if enable_keyword_filter:
-            from ... import config
+        # 중복 URL 제거 (구체성 기준)
+        print("\n[1.2단계] 중복 URL 제거 (구체적인 제목 우선)...")
+        all_links = self._deduplicate_by_specificity(all_links)
 
-            if config.KEYWORD_FILTER["mode"] != "none":
-                print("\n[1.2단계] 키워드 기반 링크 필터링...")
-                print("-" * 80)
+        # 블랙리스트 필터링 적용
+        if enable_keyword_filter and self.blacklist_keywords:
+            print(f"\n[1.3단계] {self.district_name} 블랙리스트 필터링 적용...")
+            all_links = self._apply_blacklist_filter(all_links)
 
-                initial_links = self.link_filter.filter_by_keywords(
-                    initial_links,
-                    whitelist=config.KEYWORD_FILTER.get("whitelist"),
-                    blacklist=config.KEYWORD_FILTER.get("blacklist"),
-                    mode=config.KEYWORD_FILTER["mode"],
-                )
+        # depth_level 필드 제거 (이후 처리에서 필요 없음)
+        for link in all_links:
+            link.pop("depth_level", None)
 
-                if not initial_links:
-                    print("키워드 필터링 후 처리할 링크가 없습니다.")
+        print(f"\n[SUCCESS] 총 {len(all_links)}개의 링크 수집 완료")
+        print(f"  ({self.district_name}: Strategy Pattern 사용)")
 
-        return initial_links
+        return all_links
 
 
 if __name__ == "__main__":
+    # 테스트 실행 예시
     import sys
 
-    # 테스트: 구 이름을 인자로 받아서 실행
-    if len(sys.argv) > 1:
-        district = sys.argv[1]
-    else:
-        district = "은평구"  # 기본값
+    if len(sys.argv) < 3:
+        print("사용법: python district_menu_crawler.py <구이름> <시작URL>")
+        print(
+            "예시: python district_menu_crawler.py 은평구 https://www.ep.go.kr/health/contents.do?key=1582"
+        )
+        sys.exit(1)
 
-    print(f"\n{'=' * 80}")
-    print(f"{district} 메뉴 크롤러 테스트")
-    print(f"{'=' * 80}\n")
+    district = sys.argv[1]
+    url = sys.argv[2]
 
-    crawler = DistrictMenuCrawler(district_name=district)
-    crawler.run(start_url=crawler.start_url)
+    crawler = DistrictMenuCrawler(district_name=district, start_url=url)
+    crawler.run(url)

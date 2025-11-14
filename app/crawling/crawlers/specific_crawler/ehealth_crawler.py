@@ -12,15 +12,11 @@ import json
 import re
 from typing import List, Dict, Optional
 import os
-import sys
 from datetime import datetime
 
-# 공통 모듈 import
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-import config
-import utils
-from utils import normalize_url
-from base.parallel_crawler import BaseParallelCrawler
+from ... import config
+from ...utils import normalize_url
+from ...base.parallel_crawler import BaseParallelCrawler
 
 
 class EHealthCrawler(BaseParallelCrawler):
@@ -275,7 +271,9 @@ class EHealthCrawler(BaseParallelCrawler):
             print(f"    ✗ 크롤링 실패: {e}")
             return None
 
-    def _process_article_with_tabs(self, article_info: Dict, idx: int, total: int) -> tuple:
+    def _process_article_with_tabs(
+        self, article_info: Dict, idx: int, total: int
+    ) -> tuple:
         """
         게시글 처리 및 탭 링크 감지 (병렬 처리용)
 
@@ -308,7 +306,7 @@ class EHealthCrawler(BaseParallelCrawler):
             log_buffer.append("  [SUCCESS] 성공")
         else:
             result = structured_data  # error_info
-            log_buffer.append(f"  [ERROR] 실패")
+            log_buffer.append("  [ERROR] 실패")
 
         # 로그 출력
         with self.lock:
@@ -376,7 +374,9 @@ class EHealthCrawler(BaseParallelCrawler):
 
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             future_to_article = {
-                executor.submit(self._process_article_with_tabs, article, idx, len(links)): article
+                executor.submit(
+                    self._process_article_with_tabs, article, idx, len(links)
+                ): article
                 for idx, article in enumerate(links, 1)
             }
 
@@ -397,11 +397,17 @@ class EHealthCrawler(BaseParallelCrawler):
                                     if normalized_tab not in processed_or_queued_urls:
                                         # 키워드 필터링
                                         if config.KEYWORD_FILTER["mode"] != "none":
-                                            passed, reason = self.link_filter.check_keyword_filter(
-                                                tab_link["name"],
-                                                whitelist=config.KEYWORD_FILTER.get("whitelist"),
-                                                blacklist=config.KEYWORD_FILTER.get("blacklist"),
-                                                mode=config.KEYWORD_FILTER["mode"],
+                                            passed, reason = (
+                                                self.link_filter.check_keyword_filter(
+                                                    tab_link["name"],
+                                                    whitelist=config.KEYWORD_FILTER.get(
+                                                        "whitelist"
+                                                    ),
+                                                    blacklist=config.KEYWORD_FILTER.get(
+                                                        "blacklist"
+                                                    ),
+                                                    mode=config.KEYWORD_FILTER["mode"],
+                                                )
                                             )
                                             if not passed:
                                                 continue
@@ -412,7 +418,7 @@ class EHealthCrawler(BaseParallelCrawler):
                                             self._process_article_with_tabs,
                                             tab_link,
                                             len(links),
-                                            len(links)
+                                            len(links),
                                         )
                                         future_to_article[new_future] = tab_link
                     else:

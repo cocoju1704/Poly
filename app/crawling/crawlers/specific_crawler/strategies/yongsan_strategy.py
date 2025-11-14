@@ -1,37 +1,62 @@
 """
-용산구 보건소 메뉴 수집 Strategy
+용산구 메뉴 수집 전략
+nav.lnb 구조, depth1~2
 """
 
+from .base_strategy import BaseMenuStrategy
 from bs4 import BeautifulSoup
-from typing import List, Dict, Set
-from ....utils import extract_link_from_element
+from typing import List, Dict
+from urllib.parse import urljoin
 
 
-def collect_menu_links(soup: BeautifulSoup, start_url: str) -> List[Dict]:
-    """
-    용산구 메뉴에서 링크 수집
+class YongsanStrategy(BaseMenuStrategy):
+    """용산구 전용 메뉴 수집 전략"""
 
-    Args:
-        soup: BeautifulSoup 객체
-        start_url: 시작 URL
+    def collect_links(self, soup: BeautifulSoup, base_url: str) -> List[Dict]:
+        """
+        용산구 nav.lnb에서 링크 수집
+        depth1과 depth2를 수집
+        """
+        collected_links = []
 
-    Returns:
-        수집된 링크 목록
-    """
-    collected_links = []
-    seen_urls = set()
+        # Step 1: nav.lnb 찾기
+        nav_lnb = soup.select_one("nav.lnb")
+        if not nav_lnb:
+            print("  [용산구] nav.lnb를 찾을 수 없습니다.")
+            return []
 
-    # 용산구 메뉴 선택자
-    menu_selector = ".lnb ul li a"
+        print("  [용산구] nav.lnb 발견")
 
-    base_url = start_url.split("?")[0].rsplit("/", 1)[0]
+        # Step 2: 모든 li 요소 순회
+        all_li = nav_lnb.select("li")
 
-    menu_links = soup.select(menu_selector)
+        for li in all_li:
+            # depth1: 직접 자식 a 태그만 찾기
+            depth1_link = li.find("a", recursive=False)
+            if depth1_link:
+                href = depth1_link.get("href", "")
+                if self._is_valid_href(href):
+                    name = self._extract_text(depth1_link)
+                    url = urljoin(base_url, href)
+                    collected_links.append(self._make_link_dict(name, url, 1))
 
-    for link_element in menu_links:
-        link_info = extract_link_from_element(link_element, base_url, seen_urls)
-        if link_info:
-            collected_links.append(link_info)
+            # depth2: ul > li > a 구조
+            ul = li.find("ul", recursive=False)
+            if ul:
+                depth2_li_list = ul.find_all("li", recursive=False)
+                for depth2_li in depth2_li_list:
+                    depth2_link = depth2_li.find("a", recursive=False)
+                    if depth2_link:
+                        href = depth2_link.get("href", "")
+                        if self._is_valid_href(href):
+                            name = self._extract_text(depth2_link)
+                            url = urljoin(base_url, href)
+                            collected_links.append(self._make_link_dict(name, url, 2))
 
-    print(f"  [용산구 Strategy] {len(collected_links)}개 링크 수집")
-    return collected_links
+        print(
+            f"  [용산구] 총 {len(collected_links)}개 링크 수집 "
+            f"(depth1: {len([l for l in collected_links if l['depth_level'] == 1])}, "
+            f"depth2: {len([l for l in collected_links if l['depth_level'] == 2])})"
+        )
+
+        return collected_links
