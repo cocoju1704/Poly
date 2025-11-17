@@ -7,6 +7,8 @@ e보건소는 게시판 구조로 되어 있어 일반 보건소 사이트와 �
 - 게시글 상세 페이지 크롤링
 """
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import time
 from bs4 import BeautifulSoup
 import json
 import re
@@ -455,6 +457,25 @@ class EHealthCrawler(BaseParallelCrawler):
         if return_data:
             return all_results
         print("=" * 80)
+
+    def run(self, start_url: str = None, **kwargs):
+        """
+        크롤러 팩토리 호환용 run() 메서드
+
+        Args:
+            start_url: 시작 URL (사용하지 않음, 인터페이스 통일용)
+            **kwargs: run_workflow()에 전달할 추가 인자
+
+        Returns:
+            크롤링 결과 데이터
+        """
+        return self.run_workflow(
+            categories=kwargs.get("categories"),
+            max_pages_per_category=kwargs.get("max_pages"),
+            output_filename=kwargs.get("output_filename"),
+            return_data=True,
+            save_json=kwargs.get("save_json", True),
+        )
 
 
 def main():
