@@ -23,6 +23,7 @@ from app.crawling.crawlers.specific_crawler.yangcheon_crawler import YangcheonCr
 from app.crawling.crawlers.specific_crawler.mapo_crawler import MapoCrawler
 from app.crawling.crawlers.specific_crawler.ehealth_crawler import EHealthCrawler
 from app.crawling.crawlers.specific_crawler.welfare_crawler import WelfareCrawler
+from app.crawling.crawlers.specific_crawler.nhis_crawler import NHISCrawler
 from app.crawling import utils
 
 
@@ -63,13 +64,22 @@ def get_crawler_for_url(
     url_lower = url.lower()
 
     # 1. 특수 크롤러 (도메인 기반)
-    if "welfare.seoul.kr" in url_lower or "서울복지포털" in url_lower:
-        print("[Crawler Factory] 복지포털 크롤러 선택")
-        return WelfareCrawler(output_dir=output_dir or "app/crawling/output/복지포털")
+    if "nhis.or.kr" in url_lower or "국민건강보험" in url_lower:
+        print("[Crawler Factory] 국민건강보험 크롤러 선택")
+        return NHISCrawler(
+            output_dir=output_dir or "app/crawling/output/국민건강보험",
+            max_workers=max_workers,
+        )
 
-    if "ehealth.seoul.kr" in url_lower or "서울e-보건" in url_lower:
-        print("[Crawler Factory] 이헬스 크롤러 선택")
-        return EHealthCrawler(output_dir=output_dir or "app/crawling/output/서울e-보건")
+    if "wis.seoul.go.kr" in url_lower or "서울복지포털" in url_lower:
+        print("[Crawler Factory] 서울복지포털 크롤러 선택")
+        return WelfareCrawler(
+            output_dir=output_dir or "app/crawling/output/서울복지포털"
+        )
+
+    if "e-health" in url_lower or "e-보건소" in url_lower:
+        print("[Crawler Factory] e보건소 크롤러 선택")
+        return EHealthCrawler(output_dir=output_dir or "app/crawling/output/e보건소")
 
     # 2. 구별 특수 크롤러
     if "songpa" in url_lower or "송파" in (region_name or ""):

@@ -46,6 +46,7 @@ def extract_region_from_url(url: str) -> str:
         "seoul-agi": "서울시",
         "wis.seoul": "서울시",
         "e-health": "전국",
+        "nhis": "전국",
     }
 
     parsed = urlparse(url)
