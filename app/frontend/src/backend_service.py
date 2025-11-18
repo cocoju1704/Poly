@@ -100,24 +100,28 @@ class BackendService:
     # ==============================================================================
     # 사용자 인증 및 프로필 API 호출
     # ==============================================================================
-
+    # 11.18 수정: 회원가입 시 빈 문자열 처리를 개선.
     def register_user(self, user_data: Dict[str, Any]) -> Tuple[bool, str]:
         """회원가입 API를 호출합니다."""
         url = f"{FASTAPI_BASE_URL}/api/v1/user/register"
-        payload = {
-            "username": user_data.get("username"),
-            "name": user_data.get("name"),
-            "password": user_data.get("password"),
-            "birth_date": user_data.get("birth_date"),
-            "sex": user_data.get("sex"),
-            "residency_sgg_code": user_data.get("residency_sgg_code"),
-            "insurance_type": user_data.get("insurance_type"),
-            "median_income_ratio": user_data.get("median_income_ratio"),
-            "basic_benefit_type": user_data.get("basic_benefit_type"),
-            "disability_grade": user_data.get("disability_grade"),
-            "ltci_grade": user_data.get("ltci_grade"),
-            "pregnant_or_postpartum12m": user_data.get("pregnant_or_postpartum12m"),
-        }
+
+        # ✅ 수정: 빈 문자열 값을 None으로 변환하여 백엔드로 전송
+        # 이렇게 해야 DB에 NULL로 저장되어 의도치 않은 기본값 설정을 방지할 수 있습니다.
+        payload = {}
+        for key, value in user_data.items():
+            payload[key] = value if value != "" else None
+
+        # 필수 필드는 payload에 다시 한 번 확실하게 할당합니다.
+        payload["username"] = user_data.get("username")
+        payload["name"] = user_data.get("name")
+        payload["password"] = user_data.get("password")
+
+        # median_income_ratio는 0이 유효한 값이므로 빈 문자열일 때만 None으로 처리
+        if user_data.get("median_income_ratio") == "":
+            payload["median_income_ratio"] = None
+        else:
+            payload["median_income_ratio"] = user_data.get("median_income_ratio")
+
         try:
             response = requests.post(url, json=payload, timeout=10)
             if response.status_code == 201:

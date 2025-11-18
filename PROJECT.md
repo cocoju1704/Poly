@@ -53,11 +53,6 @@ app/api/
 
 ```
 app/backend/
-├── api_server.py            # FastAPI 서버 설정 및 라우터 등록
-│   ├── CORS 미들웨어 설정
-│   ├── 예외 처리 미들웨어
-│   └── 라우터 등록
-│
 ├── llm_manager.py           # LLM 모델 연동 및 관리 로직
 │   ├── LLM 모델 초기화
 │   ├── 프롬프트 생성
