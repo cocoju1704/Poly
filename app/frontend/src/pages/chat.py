@@ -1,4 +1,4 @@
-"""채팅 렌더링/메시지 전송/정책 카드 파싱 11.13수정"""
+"""채팅 렌더링/메시지 전송/정책 카드 파싱"""
 
 import uuid
 import time
@@ -28,7 +28,6 @@ def _extract_policies_from_text(text: str):
     return None
 
 
-# 챗봇 메세지 응답 화면
 def handle_send_message(message: str):
     if not message.strip() or st.session_state.get("is_loading", False):
         return
@@ -87,12 +86,10 @@ def handle_send_message(message: str):
     st.rerun()
 
 
-# 챗봇 메인 페이지
 def render_chatbot_main():
     load_css("components/chat_messages.css")
     load_css("components/chat_ui.css")
 
-    # 대화 저장 확인 상태 초기화
     if "save_chat_confirmation" not in st.session_state:
         st.session_state.save_chat_confirmation = False
 
@@ -110,37 +107,80 @@ def render_chatbot_main():
 
     render_template("components/chat_title.html")
 
+    # ✅ 채팅 메시지 영역 - 스크롤 가능한 컨테이너
+    st.markdown('<div class="chat-container">', unsafe_allow_html=True)
+
     if st.session_state.get("messages"):
-        for message in st.session_state.messages:
+        for idx, message in enumerate(st.session_state.messages):
             if message["role"] == "user":
-                render_template(
-                    "components/chat_message_user.html", content=message["content"]
+                # 사용자 메시지
+                st.markdown(
+                    f"""
+                    <div class="chat-message-user">
+                        <div class="chat-bubble-user">
+                            <p>{message["content"]}</p>
+                        </div>
+                    </div>
+                """,
+                    unsafe_allow_html=True,
                 )
+
             elif message["role"] == "assistant":
-                render_template(
-                    "components/chat_message_assistant.html",
-                    content=message["content"],
+                # AI 응답 시작
+                st.markdown(
+                    """
+                    <div class="chat-message-assistant">
+                        <div class="chat-avatar">AI</div>
+                        <div style="flex: 1;">
+                            <div class="chat-bubble-assistant">
+                """,
+                    unsafe_allow_html=True,
                 )
+
+                # 메시지 내용
+                st.markdown(message["content"])
+
+                st.markdown("</div>", unsafe_allow_html=True)
+
+                # 정책 카드가 있으면 표시
                 if "policies" in message:
                     for policy in message["policies"]:
                         render_policy_card(policy)
 
-    render_template("components/suggested_questions_header.html")
+                # 인터랙션 버튼들
+                st.markdown('<div class="message-actions">', unsafe_allow_html=True)
+                col1, col2, col3, col4 = st.columns([1, 1, 1, 8])
+                with col1:
+                    st.button("👍", key=f"like_{idx}", help="도움이 되었어요")
+                with col2:
+                    st.button("👎", key=f"dislike_{idx}", help="별로예요")
+                with col3:
+                    st.button("📋", key=f"copy_{idx}", help="복사")
+                st.markdown("</div>", unsafe_allow_html=True)
 
-    cols = st.columns(2)
-    for idx, question in enumerate(SUGGESTED_QUESTIONS):
-        with cols[idx % 2]:
-            if st.button(
-                question,
-                key=f"suggest_{idx}",
-                use_container_width=True,
-                type="secondary",
-            ):
-                handle_send_message(question)
+                # AI 메시지 종료
+                st.markdown("</div></div>", unsafe_allow_html=True)
+                st.markdown('<hr class="message-divider">', unsafe_allow_html=True)
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    # 추천 질문 (대화가 없을 때만 표시)
+    if not st.session_state.get("messages"):
+        render_template("components/suggested_questions_header.html")
+        cols = st.columns(2)
+        for idx, question in enumerate(SUGGESTED_QUESTIONS):
+            with cols[idx % 2]:
+                if st.button(
+                    question,
+                    key=f"suggest_{idx}",
+                    use_container_width=True,
+                    type="secondary",
+                ):
+                    handle_send_message(question)
 
     st.markdown("<div style='margin-top: 40px;'></div>", unsafe_allow_html=True)
 
-    # 폼을 사용하여 엔터 키로 메시지 전송
+    # 입력창
     with st.form(key="chat_input_form", clear_on_submit=True):
         col_input, col_send = st.columns([9, 1])
         with col_input:
@@ -148,6 +188,7 @@ def render_chatbot_main():
                 "정책에 대해 질문해주세요...",
                 key="user_input",
                 label_visibility="collapsed",
+                placeholder="메시지를 입력하세요...",
             )
         with col_send:
             submitted = st.form_submit_button("✈️", use_container_width=True)
@@ -160,18 +201,14 @@ def render_chatbot_main():
     # --- 대화 저장 및 초기화 UI ---
     st.markdown("---")
     if st.session_state.save_chat_confirmation:
-        st.warning("현재 대화 내용을 저장하시겠습니까? 저장하지 않은 대화는 사라집니다.")
+        st.warning(
+            "현재 대화 내용을 저장하시겠습니까? 저장하지 않은 대화는 사라집니다."
+        )
         col1, col2, col3 = st.columns([1.5, 1.5, 1])
         with col1:
             if st.button("💾 저장하고 초기화", use_container_width=True):
                 token = _get_auth_token()
                 if token:
-                    # TODO: 백엔드에 대화 저장 API 호출 (backend_service 사용)
-                    # success, msg = backend.save_chat_history(token, st.session_state.messages)
-                    # if success:
-                    #     st.toast("대화 내용이 저장되었습니다.")
-                    # else:
-                    #     st.error(f"저장 실패: {msg}")
                     st.toast("대화 내용 저장 기능은 구현 예정입니다.")
                 st.session_state.messages = []
                 st.session_state.save_chat_confirmation = False
@@ -191,12 +228,6 @@ def render_chatbot_main():
             if st.button("💾 대화 저장", use_container_width=True):
                 token = _get_auth_token()
                 if token:
-                    # TODO: 백엔드에 대화 저장 API 호출 (backend_service 사용)
-                    # success, msg = backend.save_chat_history(token, st.session_state.messages)
-                    # if success:
-                    #     st.toast("대화 내용이 저장되었습니다.")
-                    # else:
-                    #     st.error(f"저장 실패: {msg}")
                     st.toast("대화 내용 저장 기능은 구현 예정입니다.")
                 else:
                     st.warning("로그인이 필요합니다.")
