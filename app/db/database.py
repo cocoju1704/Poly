@@ -1,10 +1,13 @@
 """Database interaction 모듈: 사용자 인증, 계정 관리, 프로필 관리 기능 포함. 11.14수정"""
+
 import psycopg2
 import psycopg2.extras
 import os
 import uuid
 from typing import Optional, Dict, List, Tuple, Any
 import logging
+
+# import datetime
 from contextlib import contextmanager
 from dotenv import load_dotenv
 
@@ -266,7 +269,11 @@ def create_user_and_profile(user_data: Dict[str, Any]) -> Tuple[bool, str]:
                 )
 
                 # 장애등급 (숫자)
-                disability_grade = {"미등록": 0, "심한 장애": 1, "심하지 않은 장애": 2}.get(user_data.get("disability_grade"), None)
+                disability_grade = {
+                    "미등록": 0,
+                    "심한 장애": 1,
+                    "심하지 않은 장애": 2,
+                }.get(user_data.get("disability_grade"), None)
 
                 # 장기요양 등급 (이미 영문 코드)
                 ltci_grade = user_data.get("ltci_grade", "NONE")
@@ -372,23 +379,76 @@ def update_user_password(user_uuid: str, new_password_hash: str) -> Tuple[bool, 
             return False, "비밀번호 업데이트 중 오류가 발생했습니다."
 
 
-def delete_user_account(user_uuid: str) -> Tuple[bool, str]:
-    """사용자와 관련된 모든 정보를 삭제합니다 (profiles는 CASCADE로 삭제됨)."""
-    with get_db_connection() as conn:
-        if conn is None:
-            return False, "DB 연결 실패."
-        try:
-            with conn.cursor() as cur:
-                cur.execute("DELETE FROM users WHERE id = %s", (user_uuid,))
-                if cur.rowcount == 0:
-                    conn.rollback()
-                    return False, "사용자 계정을 찾을 수 없습니다."
+# 11.18 회원 탈퇴 오류 수정
+def delete_user_account(user_id: str) -> Tuple[bool, str]:
+    """사용자 계정과 관련된 모든 데이터를 삭제합니다 (users, profiles, collections)."""
+
+    try:
+        # with 문으로 context manager 사용
+        with get_db_connection() as conn:
+            with conn.cursor() as cursor:
+                # UUID를 문자열로 유지 (psycopg2가 자동 변환)
+                print(f"[DEBUG] Starting delete for user_id: {user_id}")
+
+                # 디버깅: 현재 프로필 확인
+                cursor.execute(
+                    "SELECT id, user_id FROM profiles WHERE user_id = %s", (user_id,)
+                )
+                profiles = cursor.fetchall()
+                print(f"[DEBUG] Found profiles: {profiles}")
+
+                # 0. users.main_profile_id를 NULL로 설정
+                cursor.execute(
+                    "UPDATE users SET main_profile_id = NULL WHERE id = %s", (user_id,)
+                )
+                updated_users = cursor.rowcount
+                print(f"[DEBUG] Updated main_profile_id to NULL: {updated_users} users")
+
+                # 1. collections 삭제
+                cursor.execute(
+                    """
+                    DELETE FROM collections 
+                    WHERE profile_id IN (
+                        SELECT id FROM profiles WHERE user_id = %s
+                    )
+                    """,
+                    (user_id,),
+                )
+                deleted_collections = cursor.rowcount
+                print(f"[DEBUG] Deleted collections: {deleted_collections}")
+
+                # 2. profiles 삭제
+                cursor.execute("DELETE FROM profiles WHERE user_id = %s", (user_id,))
+                deleted_profiles = cursor.rowcount
+                print(f"[DEBUG] Deleted profiles: {deleted_profiles}")
+
+                # 디버깅: 삭제 후 프로필 확인
+                cursor.execute(
+                    "SELECT id, user_id FROM profiles WHERE user_id = %s", (user_id,)
+                )
+                remaining_profiles = cursor.fetchall()
+                print(f"[DEBUG] Remaining profiles after delete: {remaining_profiles}")
+
+                # 3. users 삭제
+                cursor.execute("DELETE FROM users WHERE id = %s", (user_id,))
+                deleted_users = cursor.rowcount
+                print(f"[DEBUG] Deleted users: {deleted_users}")
+
                 conn.commit()
-                return True, "사용자 계정이 성공적으로 삭제되었습니다."
-        except Exception as e:
-            conn.rollback()
-            logger.error(f"delete_user_account 오류: {e}")
-            return False, "계정 삭제 중 오류가 발생했습니다."
+
+                if deleted_users > 0:
+                    print(f"[DEBUG] 회원 탈퇴 완료 (user_id: {user_id})")
+                    return True, "회원 탈퇴가 완료되었습니다."
+                else:
+                    print(f"[DEBUG] 사용자를 찾을 수 없음 (user_id: {user_id})")
+                    return False, "사용자를 찾을 수 없습니다."
+
+    except Exception as e:
+        print(f"delete_user_account 오류: {e}")
+        import traceback
+
+        print(traceback.format_exc())
+        return False, f"회원 탈퇴 처리 중 오류가 발생했습니다: {str(e)}"
 
 
 # ==============================================================================
@@ -396,34 +456,7 @@ def delete_user_account(user_uuid: str) -> Tuple[bool, str]:
 # ==============================================================================
 
 
-def _map_profile_row(row: Dict) -> Dict[str, Any]:
-    """DB 행을 프론트엔드에서 사용하는 키 이름으로 변환합니다."""
-    # GENDER_MAPPING의 역방향 매핑
-    sex_reverse_map = {v: k for k, v in GENDER_MAPPING.items()}
-    insurance_reverse_map = {v: k for k, v in HEALTH_INSURANCE_MAPPING.items()}
-    livelihood_reverse_map = {v: k for k, v in BASIC_LIVELIHOOD_MAPPING.items()}
-
-    return {
-        "id": row.get("id"),
-        "name": row.get("name"),
-        "birthDate": str(row["birth_date"]) if row.get("birth_date") else None,
-        "gender": sex_reverse_map.get(row.get("sex"), "남성"),
-        "location": row.get("residency_sgg_code"),
-        "incomeLevel": (
-            float(row.get("median_income_ratio"))
-            if row.get("median_income_ratio")
-            else None
-        ),
-        "healthInsurance": insurance_reverse_map.get(row.get("insurance_type"), "직장"),
-        "basicLivelihood": livelihood_reverse_map.get(row.get("basic_benefit_type"), "없음"),
-        "disabilityLevel": DISABILITY_GRADE_MAP_DB_TO_FE.get(
-            row.get("disability_grade"), "미등록"
-        ),
-        "longTermCare": row.get("ltci_grade"),
-        "pregnancyStatus": "임신중" if row.get("pregnant_or_postpartum12m") else "없음",
-    }
-
-
+# 11.18 수정: 사용자 및 메인 프로필 조회 시 DB 원본 데이터 반환
 def get_user_and_profile_by_id(user_uuid: str) -> Tuple[bool, Optional[Dict[str, Any]]]:
     """사용자 UUID로 사용자 정보와 메인 프로필 정보를 조회합니다."""
     with get_db_connection() as conn:
@@ -453,12 +486,10 @@ def get_user_and_profile_by_id(user_uuid: str) -> Tuple[bool, Optional[Dict[str,
 
                 user_info = dict(result)
 
-                # 메인 프로필 정보 매핑
+                # ✅ DB 원본 데이터 그대로 반환 (_map_profile_row 제거)
                 profile_info = {}
                 if user_info.get("main_profile_id"):
-                    # _map_profile_row 함수를 재사용하여 데이터 구조를 일치시킵니다.
-                    # 단, 키 이름이 다르므로 매핑이 필요합니다.
-                    profile_row = {
+                    profile_info = {
                         "id": user_info.get("profile_id"),
                         "name": user_info.get("name"),
                         "birth_date": user_info.get("birth_date"),
@@ -469,18 +500,19 @@ def get_user_and_profile_by_id(user_uuid: str) -> Tuple[bool, Optional[Dict[str,
                         "basic_benefit_type": user_info.get("basic_benefit_type"),
                         "disability_grade": user_info.get("disability_grade"),
                         "ltci_grade": user_info.get("ltci_grade"),
-                        "pregnant_or_postpartum12m": user_info.get("pregnant_or_postpartum12m"),
+                        "pregnant_or_postpartum12m": user_info.get(
+                            "pregnant_or_postpartum12m"
+                        ),
                     }
-                    profile_info = _map_profile_row(profile_row)
 
-                # 최종 데이터 구조
+                # 최종 데이터 구조 (DB 필드명 그대로)
                 final_data = {
-                    "user_uuid": str(user_info["id"]), # users.id
+                    "user_uuid": str(user_info["id"]),
                     "userId": user_info["username"],
                     "main_profile_id": user_info["main_profile_id"],
                     "created_at": user_info.get("created_at"),
                     "updated_at": user_info.get("updated_at"),
-                    **profile_info,
+                    **profile_info,  # DB 필드명 그대로
                 }
                 return True, final_data
         except Exception as e:
@@ -488,6 +520,7 @@ def get_user_and_profile_by_id(user_uuid: str) -> Tuple[bool, Optional[Dict[str,
             return False, None
 
 
+# 11.18 수정: 프로필 목록 조회 시 DB 원본 데이터 반환
 def get_all_profiles_by_user_id(user_uuid: str) -> Tuple[bool, List[Dict[str, Any]]]:
     """사용자의 모든 프로필 목록을 조회합니다."""
     with get_db_connection() as conn:
@@ -501,13 +534,15 @@ def get_all_profiles_by_user_id(user_uuid: str) -> Tuple[bool, List[Dict[str, An
                 )
                 rows = cur.fetchall()
 
-                profiles_list = [_map_profile_row(dict(row)) for row in rows]
+                # ✅ _map_profile_row() 제거, DB 원본 데이터 그대로 반환
+                profiles_list = [dict(row) for row in rows]
                 return True, profiles_list
         except Exception as e:
             logger.error(f"get_all_profiles_by_user_id 오류: {e}")
             return False, []
 
 
+# 11.18 수정: 프로필 추가 시 프론트엔드 필드명을 DB 필드명으로 변환
 def add_profile(user_uuid: str, profile_data: Dict[str, Any]) -> Tuple[bool, int]:
     """새로운 프로필을 추가합니다. 성공 시 프로필 ID를 반환합니다."""
     with get_db_connection() as conn:
@@ -527,24 +562,21 @@ def add_profile(user_uuid: str, profile_data: Dict[str, Any]) -> Tuple[bool, int
                     (
                         user_uuid,
                         profile_data.get("name", "새 프로필"),
-                        profile_data.get("birthDate"),
-                        GENDER_MAPPING.get(profile_data.get("gender"), "M"),
-                        profile_data.get("location"),
-                        HEALTH_INSURANCE_MAPPING.get(profile_data.get("healthInsurance"), "EMPLOYED"),
-                        (
-                            float(profile_data.get("median_income_ratio") or 0)
-                            if profile_data.get("median_income_ratio")
-                            else None
-                        ),
-                        BASIC_LIVELIHOOD_MAPPING.get(profile_data.get("basicLivelihood"), "NONE"),
-                        (
-                            {"미등록": 0, "심한 장애": 1, "심하지 않은 장애": 2}.get(profile_data.get("disabilityLevel"), None)
-                        ),
-                        profile_data.get("longTermCare"),
-                        (
-                            profile_data.get("pregnancyStatus") == "임신중"
-                            or profile_data.get("pregnancyStatus") == "출산후12개월이내"
-                        ),
+                        profile_data.get("birth_date"),  # ✅ birthDate → birth_date
+                        profile_data.get("sex", "M"),  # ✅ gender → sex (매핑 제거)
+                        profile_data.get(
+                            "residency_sgg_code"
+                        ),  # ✅ location → residency_sgg_code
+                        profile_data.get("insurance_type", "EMPLOYED"),  # ✅ 매핑 제거
+                        profile_data.get("median_income_ratio"),  # ✅ 이미 float
+                        profile_data.get("basic_benefit_type", "NONE"),  # ✅ 매핑 제거
+                        profile_data.get("disability_grade"),  # ✅ 이미 변환됨
+                        profile_data.get(
+                            "ltci_grade", "NONE"
+                        ),  # ✅ longTermCare → ltci_grade
+                        profile_data.get(
+                            "pregnant_or_postpartum12m", False
+                        ),  # ✅ bool 타입
                     ),
                 )
 
@@ -554,6 +586,9 @@ def add_profile(user_uuid: str, profile_data: Dict[str, Any]) -> Tuple[bool, int
         except Exception as e:
             conn.rollback()
             logger.error(f"add_profile 오류: {e}")
+            import traceback
+
+            logger.error(traceback.format_exc())
             return False, 0
 
 
@@ -570,14 +605,14 @@ def update_profile(profile_id: int, profile_data: Dict[str, Any]) -> bool:
             column_map = {
                 "name": "name",
                 "birthDate": "birth_date",
-                "gender": "sex", # Frontend 'gender' maps to DB 'sex'
-                "location": "residency_sgg_code", # Frontend 'location' maps to DB 'residency_sgg_code'
-                "healthInsurance": "insurance_type", # Frontend 'healthInsurance' maps to DB 'insurance_type'
-                "incomeLevel": "median_income_ratio", # Frontend 'incomeLevel' maps to DB 'median_income_ratio'
-                "basicLivelihood": "basic_benefit_type", # Frontend 'basicLivelihood' maps to DB 'basic_benefit_type'
-                "disabilityLevel": "disability_grade", # Frontend 'disabilityLevel' maps to DB 'disability_grade'
-                "longTermCare": "ltci_grade", # Frontend 'longTermCare' maps to DB 'ltci_grade'
-                "pregnancyStatus": "pregnant_or_postpartum12m", # Frontend 'pregnancyStatus' maps to DB 'pregnant_or_postpartum12m'
+                "gender": "sex",  # Frontend 'gender' maps to DB 'sex'
+                "location": "residency_sgg_code",  # Frontend 'location' maps to DB 'residency_sgg_code'
+                "healthInsurance": "insurance_type",  # Frontend 'healthInsurance' maps to DB 'insurance_type'
+                "incomeLevel": "median_income_ratio",  # Frontend 'incomeLevel' maps to DB 'median_income_ratio'
+                "basicLivelihood": "basic_benefit_type",  # Frontend 'basicLivelihood' maps to DB 'basic_benefit_type'
+                "disabilityLevel": "disability_grade",  # Frontend 'disabilityLevel' maps to DB 'disability_grade'
+                "longTermCare": "ltci_grade",  # Frontend 'longTermCare' maps to DB 'ltci_grade'
+                "pregnancyStatus": "pregnant_or_postpartum12m",  # Frontend 'pregnancyStatus' maps to DB 'pregnant_or_postpartum12m'
             }
 
             for frontend_key, db_column in column_map.items():
@@ -592,11 +627,17 @@ def update_profile(profile_id: int, profile_data: Dict[str, Any]) -> bool:
                     elif frontend_key == "basicLivelihood":
                         value = BASIC_LIVELIHOOD_MAPPING.get(value, "NONE")
                     elif frontend_key == "disabilityLevel":
-                        value = {"미등록": 0, "심한 장애": 1, "심하지 않은 장애": 2}.get(value, None)
-                    elif frontend_key == "longTermCare": # No change needed, already matches
+                        value = {
+                            "미등록": 0,
+                            "심한 장애": 1,
+                            "심하지 않은 장애": 2,
+                        }.get(value, None)
+                    elif (
+                        frontend_key == "longTermCare"
+                    ):  # No change needed, already matches
                         pass
                     elif frontend_key == "pregnancyStatus":
-                        value = (value == "임신중" or value == "출산후12개월이내")
+                        value = value == "임신중" or value == "출산후12개월이내"
                     elif frontend_key == "incomeLevel":
                         value = float(value) if value is not None else None
                     elif frontend_key == "birthDate":

@@ -26,7 +26,7 @@ from app.api.v1 import chat, user
 # )
 app = FastAPI()
 # CORS 설정: Streamlit(프론트엔드)에서 백엔드 API 호출을 허용하기 위해 필수
-# 개발 환경에서는 모든 출처를 허용 (*), 실제 환경에서는 Streamlit 앱 URL로 제한해야 합니다.
+# 개발 환경에서는 모든 출처를 허용 (*), 실제 환경에서는 Streamlit 앱 URL로 제한.
 origins = [
     "*",  # 개발 환경에서 모든 출처 허용
     "http://localhost:8501",  # Streamlit 기본 포트

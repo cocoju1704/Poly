@@ -6,6 +6,7 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 from typing import Dict, Any, Tuple, Optional, List
 from datetime import date, datetime
+from app.schemas import UserProfile
 from .db_core import get_db_connection
 from .normalizer import (
     _normalize_birth_date,
@@ -33,11 +34,9 @@ def _serialize_date(value):
 
 
 # --------------------------------------------------
-# ❌ 제거: _transform_db_to_api() 함수는 schemas.py의 from_db_dict()로 대체
+# 제거: _transform_db_to_api() 함수는 schemas.py의 from_db_dict()로 대체
 # --------------------------------------------------
 # schemas.py의 UserProfile.from_db_dict()를 사용합니다
-
-
 # --------------------------------------------------
 # 1. CRUD 함수들
 # --------------------------------------------------
@@ -217,7 +216,7 @@ def get_user_password_hash(username: str) -> Optional[str]:
 def get_user_and_profile_by_id(user_uuid: str) -> Tuple[bool, Dict[str, Any]]:
     """
     user_uuid로 users와 profiles 테이블을 조인하여 사용자 정보를 조회합니다.
-    ✅ schemas.py의 from_db_dict() 사용 (변환 로직 통일)
+    schemas.py의 from_db_dict() 사용 (변환 로직 통일)
     """
     conn = get_db_connection()
     if not conn:
@@ -244,48 +243,25 @@ def get_user_and_profile_by_id(user_uuid: str) -> Tuple[bool, Dict[str, Any]]:
                 return False, {"error": "사용자를 찾을 수 없습니다."}
 
             db_data = dict(row)
-
-            # ✅ 기본 사용자 정보
+            # --------오류 확인 -----------------
+            print(f"🔍 DEBUG - User UUID: {user_uuid}")
+            print(f"🔍 DEBUG - Main Profile ID: {db_data.get('main_profile_id')}")
+            print(f"🔍 DEBUG - Profile ID: {db_data.get('profile_id')}")
+            print(f"🔍 DEBUG - DB Data: {db_data}")
+            # =============================
+            # 기본 사용자 정보
             result = {
                 "id": str(db_data.get("user_id")),
                 "username": db_data.get("username"),
                 "main_profile_id": db_data.get("main_profile_id"),
             }
 
-            # ✅ 프로필이 있으면 schemas.py의 from_db_dict() 사용
+            # ✅ from_db_dict()로 변환
             if db_data.get("profile_id"):
-                # UserProfile.from_db_dict()를 호출하기 위해 import 필요
-                # 하지만 순환 참조를 피하기 위해 여기서는 직접 변환
-                result.update(
-                    {
-                        "name": db_data.get("name"),
-                        "birthDate": _serialize_date(db_data.get("birth_date")),
-                        "gender": (
-                            "남성"
-                            if db_data.get("sex") == "M"
-                            else "여성" if db_data.get("sex") == "F" else ""
-                        ),
-                        "location": db_data.get("residency_sgg_code", ""),
-                        "healthInsurance": db_data.get("insurance_type", ""),
-                        "incomeLevel": (
-                            float(db_data.get("median_income_ratio", 0.0))
-                            if db_data.get("median_income_ratio")
-                            else 0.0
-                        ),
-                        "basicLivelihood": db_data.get("basic_benefit_type", "NONE"),
-                        "disabilityLevel": (
-                            str(db_data.get("disability_grade", "0"))
-                            if db_data.get("disability_grade") is not None
-                            else "0"
-                        ),
-                        "longTermCare": db_data.get("ltci_grade", "NONE"),
-                        "pregnancyStatus": (
-                            "임신중"
-                            if db_data.get("pregnant_or_postpartum12m")
-                            else "없음"
-                        ),
-                    }
-                )
+                profile = UserProfile.from_db_dict(db_data)
+                result["profile"] = profile.model_dump(exclude_none=False)
+            else:
+                result["profile"] = {}
 
             return True, result
 
@@ -456,6 +432,7 @@ def check_user_exists(username: str) -> bool:
             conn.close()
 
 
+# 11.18 추가: 회원 탈퇴 오류 수정
 def delete_user_account(user_id: str) -> Tuple[bool, str]:
     """사용자 계정과 관련된 모든 데이터를 삭제합니다 (users, profiles, collections)."""
     conn = get_db_connection()
@@ -464,25 +441,83 @@ def delete_user_account(user_id: str) -> Tuple[bool, str]:
 
     try:
         with conn.cursor() as cursor:
+            # UUID 타입으로 변환 (문자열인 경우)
+            if isinstance(user_id, str):
+                from uuid import UUID
+
+                user_id_uuid = UUID(user_id)
+            else:
+                user_id_uuid = user_id
+
+            logger.info(f"Starting delete for user_id: {user_id_uuid}")
+
+            # 디버깅: 현재 프로필 확인
             cursor.execute(
-                "DELETE FROM collections WHERE profile_id IN (SELECT id FROM profiles WHERE user_id = %s)",
-                (user_id,),
+                "SELECT id, user_id FROM profiles WHERE user_id = %s", (user_id_uuid,)
             )
-            cursor.execute("DELETE FROM profiles WHERE user_id = %s", (user_id,))
-            cursor.execute("DELETE FROM users WHERE id = %s", (user_id,))
+            profiles = cursor.fetchall()
+            logger.info(f"Found profiles: {profiles}")
+
+            # 0. users.main_profile_id를 NULL로 설정
+            cursor.execute(
+                "UPDATE users SET main_profile_id = NULL WHERE id = %s", (user_id_uuid,)
+            )
+            updated_users = cursor.rowcount
+            logger.info(f"Updated main_profile_id to NULL: {updated_users} users")
+
+            # 1. collections 삭제
+            cursor.execute(
+                """
+                DELETE FROM collections 
+                WHERE profile_id IN (
+                    SELECT id FROM profiles WHERE user_id = %s
+                )
+                """,
+                (user_id_uuid,),
+            )
+            deleted_collections = cursor.rowcount
+            logger.info(f"Deleted collections: {deleted_collections}")
+
+            # 2. profiles 삭제
+            cursor.execute("DELETE FROM profiles WHERE user_id = %s", (user_id_uuid,))
+            deleted_profiles = cursor.rowcount
+            logger.info(f"Deleted profiles: {deleted_profiles}")
+
+            # 디버깅: 삭제 후 프로필 확인
+            cursor.execute(
+                "SELECT id, user_id FROM profiles WHERE user_id = %s", (user_id_uuid,)
+            )
+            remaining_profiles = cursor.fetchall()
+            logger.info(f"Remaining profiles after delete: {remaining_profiles}")
+
+            # 3. users 삭제
+            cursor.execute("DELETE FROM users WHERE id = %s", (user_id_uuid,))
+            deleted_users = cursor.rowcount
+            logger.info(f"Deleted users: {deleted_users}")
+
             conn.commit()
-            logger.info(f"회원 탈퇴 완료 (user_id: {user_id})")
-            return True, "회원 탈퇴가 완료되었습니다."
+
+            if deleted_users > 0:
+                logger.info(f"회원 탈퇴 완료 (user_id: {user_id})")
+                return True, "회원 탈퇴가 완료되었습니다."
+            else:
+                logger.warning(f"사용자를 찾을 수 없음 (user_id: {user_id})")
+                return False, "사용자를 찾을 수 없습니다."
+
     except Exception as e:
         if conn:
             conn.rollback()
         logger.error(f"회원 탈퇴 중 오류 발생 (user_id: {user_id}) - {e}")
-        return False, "회원 탈퇴 처리 중 오류가 발생했습니다."
+        import traceback
+
+        logger.error(traceback.format_exc())
+        return False, f"회원 탈퇴 처리 중 오류가 발생했습니다: {str(e)}"
     finally:
         if conn:
             conn.close()
 
 
+# 프로필 추가 및 관리 함수들
 def add_profile(
     user_uuid: str, profile_data: Dict[str, Any]
 ) -> Tuple[bool, Optional[int]]:
@@ -669,50 +704,19 @@ def get_all_profiles_by_user_id(user_uuid: str) -> Tuple[bool, List[Dict[str, An
         """
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
             cursor.execute(query, (user_uuid,))
-            profiles = cursor.fetchall()
+            rows = cursor.fetchall()
 
-            result_profiles = []
-            for profile in profiles:
-                db_data = dict(profile)
+            # ✅ DB 원본 그대로 반환 (API에서 변환할 것)
+            profiles = [dict(row) for row in rows]
+            return True, profiles
 
-                # ✅ DB 필드명 → 프론트엔드 필드명 변환
-                transformed = {
-                    "id": db_data.get("id"),
-                    "name": db_data.get("name"),
-                    "birthDate": _serialize_date(db_data.get("birth_date")),
-                    "gender": (
-                        "남성"
-                        if db_data.get("sex") == "M"
-                        else "여성" if db_data.get("sex") == "F" else ""
-                    ),
-                    "location": db_data.get("residency_sgg_code", ""),
-                    "healthInsurance": db_data.get("insurance_type", ""),
-                    "incomeLevel": (
-                        float(db_data.get("median_income_ratio", 0.0))
-                        if db_data.get("median_income_ratio")
-                        else 0.0
-                    ),
-                    "basicLivelihood": db_data.get("basic_benefit_type", "NONE"),
-                    "disabilityLevel": (
-                        str(db_data.get("disability_grade", "0"))
-                        if db_data.get("disability_grade") is not None
-                        else "0"
-                    ),
-                    "longTermCare": db_data.get("ltci_grade", "NONE"),
-                    "pregnancyStatus": (
-                        "임신중" if db_data.get("pregnant_or_postpartum12m") else "없음"
-                    ),
-                }
-
-                result_profiles.append(transformed)
-
-            return True, result_profiles
     except Exception as e:
-        logger.error(f"전체 프로필 조회 중 오류 발생: {user_uuid} - {e}")
+        print(f"❌ get_all_profiles_by_user_id 에러: {e}")
         return False, []
     finally:
-        if conn:
-            conn.close()
+        conn.close()
+
+
 # --------------------------------------------------
 # End of CRUD 함수들
 # --------------------------------------------------

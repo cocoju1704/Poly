@@ -1,11 +1,12 @@
-"""User & Auth 관련 API 엔드포인트 - 최종 수정 버전"""
+"""User & Auth 관련 API 엔드포인트 -11.18(리프레시 토큰 수정, 프로필 필드명 변환 적용)"""
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from datetime import datetime, timezone
 from typing import List, Any
 from passlib.context import CryptContext
 
 from app.db.database import get_db
-from app.auth import create_access_token, get_current_user
+from app.auth import create_access_token, create_refresh_token, get_current_user
 from app.db import database as db_ops
 from app.schemas import (
     UserCreate,
@@ -15,6 +16,8 @@ from app.schemas import (
     Token,
     TokenData,
     SuccessResponse,
+    PasswordChangeRequest,
+    RefreshTokenRequest,
     User,
 )
 
@@ -112,8 +115,22 @@ async def login_user(user_data: UserLogin, db: Any = Depends(get_db)):
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    # 1. 액세스 토큰 생성
     access_token = create_access_token(data={"sub": user_data.username})
-    return Token(access_token=access_token, token_type="bearer")
+
+    # 2. 리프레시 토큰 생성 및 DB 저장
+    user_uuid = db_ops.get_user_uuid_by_username(user_data.username)
+    if not user_uuid:
+        raise HTTPException(status_code=500, detail="사용자 UUID를 찾을 수 없습니다.")
+
+    # DB 저장 없이 리프레시 토큰 생성
+    refresh_token = create_refresh_token(data={"sub": user_data.username})
+
+    return Token(
+        access_token=access_token,
+        token_type="bearer",
+        refresh_token=refresh_token,
+    )
 
 
 # ===============================================
@@ -137,15 +154,16 @@ async def get_user_profile(current_user: dict = Depends(get_current_active_user)
     if not ok or not profile_data:
         raise HTTPException(status_code=404, detail="프로필을 찾을 수 없습니다.")
 
-    # ✅ DB 필드명 → 프론트엔드 필드명 변환
-    frontend_profile = UserProfile.from_db_dict(profile_data)
+    return profile_data
+    # # ✅ DB 필드명 → 프론트엔드 필드명 변환
+    # frontend_profile = UserProfile.from_db_dict(profile_data)
 
-    return {
-        "id": current_user.get("id"),
-        "username": current_user.get("username"),
-        "main_profile_id": current_user.get("main_profile_id"),
-        "profile": frontend_profile.model_dump(),
-    }
+    # return {
+    #     "id": current_user.get("id"),
+    #     "username": current_user.get("username"),
+    #     "main_profile_id": current_user.get("main_profile_id"),
+    #     "profile": frontend_profile.model_dump(),
+    # }
 
 
 # 11.18 수정
@@ -199,7 +217,7 @@ async def get_all_user_profiles(
     for profile in profiles_list:
         frontend_profile = UserProfile.from_db_dict(profile)
         frontend_profiles.append(
-            {"id": profile.get("id"), **frontend_profile.model_dump()}
+            {"id": profile.get("id"), **frontend_profile.model_dump(exclude_none=False)}
         )
 
     return frontend_profiles
@@ -254,6 +272,91 @@ async def delete_profile(
         raise HTTPException(status_code=500, detail=message)
 
     return SuccessResponse(message=message)
+
+
+# 11.18 추가
+# 비밀번호 변경 - 모든 기기에서 로그아웃 처리 (리프레시 토큰 무효화)
+@router.put("/password", response_model=SuccessResponse, summary="비밀번호 변경")
+async def change_password(
+    request: PasswordChangeRequest,
+    current_user: dict = Depends(get_current_active_user),
+):
+    """
+    현재 사용자의 비밀번호를 변경하고, 모든 기기에서 로그아웃 처리합니다.
+    (모든 리프레시 토큰 무효화)
+    """
+    user_uuid = current_user.get("id")
+    username = current_user.get("userId")
+
+    if not user_uuid or not username:
+        raise HTTPException(status_code=401, detail="사용자 정보를 찾을 수 없습니다.")
+
+    # 1. 현재 비밀번호 확인
+    stored_hash = db_ops.get_user_password_hash(username)
+    if not stored_hash or not pwd_context.verify(request.current_password, stored_hash):
+        raise HTTPException(
+            status_code=400, detail="현재 비밀번호가 일치하지 않습니다."
+        )
+
+    # 2. 새 비밀번호 해시화 및 DB 업데이트
+    new_password_hash = pwd_context.hash(request.new_password)
+    ok, message = db_ops.update_user_password(user_uuid, new_password_hash)
+
+    if not ok:
+        raise HTTPException(status_code=500, detail=message)
+
+    return SuccessResponse(
+        message="비밀번호가 성공적으로 변경되었습니다. 보안을 위해 다시 로그인해주세요."
+    )
+
+
+# 11.18 추가: 액세스 토큰 재발급 엔드포인트
+@router.post("/refresh", response_model=Token, summary="액세스 토큰 재발급")
+async def refresh_access_token(request: RefreshTokenRequest):
+    """리프레시 토큰으로 새 액세스 토큰을 발급합니다."""
+    try:
+        from app.auth import SECRET_KEY, ALGORITHM
+        from jose import jwt, JWTError
+
+        payload = jwt.decode(request.refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
+        username: str = payload.get("sub")
+        token_type: str = payload.get("type")
+
+        if username is None or token_type != "refresh":
+            raise HTTPException(
+                status_code=401, detail="유효하지 않은 리프레시 토큰입니다."
+            )
+
+        user_uuid = db_ops.get_user_uuid_by_username(username)
+        if not user_uuid:
+            raise HTTPException(status_code=401, detail="사용자를 찾을 수 없습니다.")
+
+        new_access_token = create_access_token(data={"sub": username})
+
+        return Token(access_token=new_access_token, token_type="bearer")
+
+    except JWTError:
+        raise HTTPException(
+            status_code=401, detail="리프레시 토큰이 만료되었거나 유효하지 않습니다."
+        )
+
+
+# 11.18 추가: 로그아웃 엔드포인트
+@router.post("/logout", response_model=SuccessResponse, summary="로그아웃")
+async def logout_user(request: RefreshTokenRequest):
+    """
+    로그아웃 처리. 클라이언트 측에서 받은 리프레시 토큰을 DB에서 삭제합니다.
+    """
+    success = db_ops.delete_refresh_token(request.refresh_token)
+
+    if not success:
+        # 실패해도 클라이언트 입장에선 로그아웃된 것이므로 에러를 발생시키지 않을 수 있음
+        # 여기서는 명확한 피드백을 위해 실패 메시지 반환
+        return SuccessResponse(
+            message="로그아웃 처리 중 토큰을 찾지 못했지만, 클라이언트 세션은 종료됩니다."
+        )
+
+    return SuccessResponse(message="성공적으로 로그아웃되었습니다.")
 
 
 # ✅ 메인 프로필 설정 11.18 수정

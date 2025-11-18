@@ -155,7 +155,10 @@ def load_user_profiles_from_backend(token: str) -> bool:
             return False
 
         st.session_state["user_info"] = user_info
-        logger.info(f"✅ 사용자 정보 로드 완료: {user_info.get('userId')}")
+        logger.info(f"✅ 사용자 정보 로드 완료: {user_info.get('id')} ({user_info.get('username')})")
+
+        # 디버깅용 추가
+        logger.info(f"🔍 DEBUG - user_info: {user_info}")
 
         # 2. 모든 프로필 목록 조회
         ok_profiles, all_profiles = backend_service.get_all_profiles(token)

@@ -5,13 +5,16 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 
-# 이제 DB Model 대신 TokenData 스키마만 가져옵니다.
+# 이제 DB Model 대신 TokenData 스키마를 가져옴.
 from app.schemas import TokenData
 
 # 설정 값 (실제 애플리케이션에서는 환경 변수나 설정 파일에서 불러와야 합니다.)
 SECRET_KEY = "YOUR_SECRET_KEY"
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 10
+ACCESS_TOKEN_EXPIRE_MINUTES = 30  
+# 30분
+REFRESH_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7   
+# 7일
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
@@ -24,6 +27,21 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     else:
         expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
+
+# 11.17 추가: 리프레시 토큰 생성 함수
+def create_refresh_token(data: dict, expires_delta: Optional[timedelta] = None):
+    """주어진 데이터로 JWT 리프레시 토큰을 생성합니다."""
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.now(timezone.utc) + expires_delta
+    else:
+        expire = datetime.now(timezone.utc) + timedelta(
+            minutes=REFRESH_TOKEN_EXPIRE_MINUTES
+        )
+    to_encode.update({"exp": expire, "type": "refresh"})  # 리프레시 토큰임을 명시
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
