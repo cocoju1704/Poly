@@ -574,7 +574,7 @@ streamlit run app.py
    │
    └─ 2. 자동 로그인 시도
       └─ backend_service.login_user(email, password)
-         │
+         │  (email은 회원가입 시 사용한 username(아이디) 값)
          └─ JWT 토큰 획득
             │
             └─ 세션에 토큰 저장

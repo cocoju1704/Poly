@@ -149,13 +149,13 @@ def render_chatbot_main():
 
                 # 인터랙션 버튼들
                 st.markdown('<div class="message-actions">', unsafe_allow_html=True)
-                col1, col2, col3, col4 = st.columns([1, 1, 1, 8])
-                with col1:
-                    st.button("👍", key=f"like_{idx}", help="도움이 되었어요")
-                with col2:
-                    st.button("👎", key=f"dislike_{idx}", help="별로예요")
-                with col3:
-                    st.button("📋", key=f"copy_{idx}", help="복사")
+                # col1, col2, col3, col4 = st.columns([1, 1, 1, 8])
+                # with col1:
+                #     st.button("👍", key=f"like_{idx}", help="도움이 되었어요")
+                # with col2:
+                #     st.button("👎", key=f"dislike_{idx}", help="별로예요")
+                # with col3:
+                #     st.button("📋", key=f"copy_{idx}", help="복사")
                 st.markdown("</div>", unsafe_allow_html=True)
 
                 # AI 메시지 종료
