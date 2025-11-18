@@ -258,13 +258,16 @@ def _profile_collection_to_text(
 
         # 5) 장애등급
         dis = _extract_profile_field(profile, "disability_grade")
-        if dis:
-            # "3" → "장애 3급" 정도로 보정
-            dis_str = str(dis).strip()
-            if dis_str.isdigit():
-                pieces.append(f"장애 {dis_str}급")
-            else:
-                pieces.append(f"장애등급 {dis_str}")
+        if dis is not None:
+            try:
+                dnum = int(float(str(dis).strip()))
+            except:
+                dnum = None
+
+            if dnum == 1:
+                label = "장애가 있으나 심하지 않음(경증)"
+            elif dnum == 2:
+                label = "장애가 심함(중증)"
 
         # 6) 장기요양등급
         ltci_raw = _extract_profile_field(profile, "ltci_grade")

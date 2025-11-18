@@ -88,7 +88,7 @@ def orchestrate(state: Dict[str, Any]) -> SessionOrchestratorOutput:
       - messages: tool 로그 1줄 이상 append
     """
     out: SessionOrchestratorOutput = {}
-    msgs: List[Message] = list(state.get("messages") or [])
+    msgs: List[Message] = []
 
     # 0) 사용자 요청 end_session 플래그 확인
     user_action = (state.get("user_action") or "none").strip().lower()

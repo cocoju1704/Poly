@@ -90,6 +90,11 @@ class PersistResult(TypedDict, total=False):
 
 
 def _append_tool(msgs: List[Message], text: str, meta: Optional[Dict[str, Any]] = None) -> Message:
+    """
+    msgs 리스트에 tool 로그 1개를 append 하고, 그 Message를 반환.
+    - persist 내부에서는 cleaned(실제 DB 저장용)에만 추가하고
+      그래프로 리턴할 delta 리스트에는 반환값을 따로 모은다.
+    """
     msg: Message = {
         "role": "tool",
         "content": text,
@@ -98,6 +103,7 @@ def _append_tool(msgs: List[Message], text: str, meta: Optional[Dict[str, Any]] 
     }
     msgs.append(msg)
     return msg
+
 
 def _parse_median_income_ratio(raw: Any) -> Optional[float]:
     if raw is None:
@@ -121,6 +127,7 @@ def _parse_median_income_ratio(raw: Any) -> Optional[float]:
         return v
     else:
         return v / 100.0
+
 
 # ─────────────────────────────────────────────────────────
 # Summarizer (간단 버전)
@@ -266,9 +273,9 @@ def _merge_collection(ephemeral: Any, db_coll: Optional[List[Dict[str, Any]]]) -
     for t in new_triples:
         subj = (t.get("subject") or "").strip()
         pred = (t.get("predicate") or "").strip()
-        obj  = (t.get("object") or "").strip()
-        cs   = (t.get("code_system") or "") or None
-        cd   = (t.get("code") or "") or None
+        obj = (t.get("object") or "").strip()
+        cs = (t.get("code_system") or "") or None
+        cd = (t.get("code") or "") or None
 
         if not subj or not pred or not obj:
             continue
@@ -344,23 +351,34 @@ def persist(
     LangGraph 노드: 세션 종료 시 호출.
     - Cleaner 동작은 (인자) > (환경변수) 순으로 결정.
     - DB upsert는 psycopg 트랜잭션 안에서 수행.
+
+    중요:
+      - state["messages"]는 그래프 전체에서 append-only로 관리되므로,
+        여기서는 그 전체를 읽어 DB에 저장만 하고,
+        그래프에 되돌려줄 "messages"는 이번 노드에서 새로 남긴 tool 로그(delta)만 리턴한다.
     """
     # DB URL 없으면 DB 작업을 스킵하고 로그만 남김
     if not DB_URL:
-        msgs: List[Message] = list(state.get("messages") or [])
-        log_msg = _append_tool(msgs, "[persist_pipeline] DATABASE_URL not set; skipping DB upsert")
+        raw_msgs: List[Message] = list(state.get("messages") or [])
+        msgs_for_db = raw_msgs  # 그대로 사용 (cleaner도 안 들어감)
+        # delta 용 로그
+        log_msg = _append_tool(
+            msgs_for_db,
+            "[persist_pipeline] DATABASE_URL not set; skipping DB upsert",
+        )
         result: PersistResult = {
             "ok": False,
             "conversation_id": None,
-            "counts": {"messages": len(msgs), "embeddings": 0},
+            "counts": {"messages": len(msgs_for_db), "embeddings": 0},
             "warnings": ["DATABASE_URL not set"],
         }
         return {
-            "messages": [log_msg],
+            "messages": [log_msg],  # delta만 리턴
             "persist_result": result,
             "rolling_summary": state.get("rolling_summary"),
         }
 
+    # 그래프 state에서 messages 전체를 읽어서 DB에 저장용으로 사용
     raw_msgs: List[Message] = list(state.get("messages") or [])
     rolling_summary = state.get("rolling_summary")
     profile_id = state.get("profile_id")
@@ -377,9 +395,12 @@ def persist(
         mode=_mode,
         no_store_policy=_no_store,
     )
+
+    # delta 로 반환할 tool 로그들은 따로 모은다.
     log_messages: List[Message] = []
 
-    # 이후 로그는 cleaned에 직접 append (재클린 없음)
+    # cleaner 적용 로그는 cleaned에도(실제 DB 저장용) 남기고,
+    # 반환 delta(log_messages)에도 공유한다.
     log_messages.append(
         _append_tool(
             cleaned,
@@ -413,8 +434,13 @@ def persist(
                     merged_profile = merge_result.get("merged_profile")
                     merged_collection = merge_result.get("merged_collection")
                     merge_log = merge_result.get("merge_log") or []
+
                     log_messages.append(
-                        _append_tool(cleaned, "[persist_pipeline] diff_merge completed", {"log": merge_log})
+                        _append_tool(
+                            cleaned,
+                            "[persist_pipeline] diff_merge completed",
+                            {"log": merge_log},
+                        )
                     )
 
                     # profiles upsert
@@ -430,7 +456,10 @@ def persist(
                 else:
                     warnings.append("profile_id is None; skip profile/collection upsert")
                     log_messages.append(
-                        _append_tool(cleaned, "[persist_pipeline] no profile_id; skip profile/collection")
+                        _append_tool(
+                            cleaned,
+                            "[persist_pipeline] no profile_id; skip profile/collection",
+                        )
                     )
 
                 # 5-2) conversations upsert
@@ -458,7 +487,11 @@ def persist(
     except Exception as e:
         warnings.append(f"DB error: {e}")
         log_messages.append(
-            _append_tool(cleaned, "[persist_pipeline] DB error; rollback", {"error": str(e)})
+            _append_tool(
+                cleaned,
+                "[persist_pipeline] DB error; rollback",
+                {"error": str(e)},
+            )
         )
 
     # 6) 결과 리턴
@@ -483,6 +516,7 @@ def persist(
     )
 
     return {
+        # 🔹 그래프에는 이번 노드에서 새로 생성한 tool 로그(delta)만 넘긴다.
         "messages": log_messages,
         "persist_result": result,
         "rolling_summary": final_summary,
