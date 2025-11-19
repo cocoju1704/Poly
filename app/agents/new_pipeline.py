@@ -335,7 +335,7 @@ if __name__ == "__main__":
     out2 = app.invoke({
         "session_id": "sess-001",
         "profile_id": 76,
-        "user_input": "오늘 대화 저장해줘.",
+        "user_input": "저는 췌장암이 있고 현재 항암치료중입니다.",
         "rolling_summary": out.get("rolling_summary"),
         "end_session": True,
     }, config=cfg)

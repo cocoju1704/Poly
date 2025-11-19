@@ -49,7 +49,14 @@ if not DB_URL:
 
 if DB_URL.startswith("postgresql+psycopg://"):
     DB_URL = DB_URL.replace("postgresql+psycopg://", "postgresql://", 1)
-
+    
+# -------------------------------------------------------------------
+# Retriever tunable parameters
+# -------------------------------------------------------------------
+RAW_TOP_K = int(os.getenv("POLICY_RETRIEVER_RAW_TOP_K", "24"))
+CONTEXT_TOP_K = int(os.getenv("POLICY_RETRIEVER_CONTEXT_TOP_K", "24"))
+SIMILARITY_FLOOR = float(os.getenv("POLICY_RETRIEVER_SIM_FLOOR", "0.3"))
+MIN_CANDIDATES_AFTER_FLOOR = int(os.getenv("POLICY_RETRIEVER_MIN_AFTER_FLOOR", "5"))
 
 # -------------------------------------------------------------------
 # Embedding Model (SentenceTransformer, BGE-m3-ko)
@@ -145,27 +152,43 @@ def _hybrid_search_documents(
     if not query_text:
         return [], []
 
+    # 키워드 추출 (디버깅/로그용)
     keywords = extract_keywords(query_text, max_k=8)
 
+    # ─────────────────────────────────────────────
+    # 1) region filter: merged_profile 내 residency_sgg_code(or region_gu)을 사용
+    #    → retrieval_planner와 동일한 하드필터링
+    # ─────────────────────────────────────────────
     # region filter: merged_profile 내 residency_sgg_code(or region_gu)을 사용
     region_filter = None
     if merged_profile:
         region_val = merged_profile.get("residency_sgg_code")
         if region_val is None:
             region_val = merged_profile.get("region_gu")
+        print("[policy_retriever_node] merged_profile region_raw:", region_val)
         region_filter = _sanitize_region(region_val)
+        print("[policy_retriever_node] region_filter after sanitize:", region_filter)
         if region_filter is None:
             print("[policy_retriever_node] region_filter empty or missing")
+    else:
+        print("[policy_retriever_node] merged_profile is None or empty")
 
-    # embedding
+
+    # ─────────────────────────────────────────────
+    # 2) 임베딩 계산
+    # ─────────────────────────────────────────────
     try:
         qvec = _embed_text(query_text)
-    except Exception as e:  # noqa: E722
+    except Exception as e:
         print(f"[policy_retriever_node] embed failed: {e}")
         return [], keywords
 
+    # psycopg3에서 VECTOR 타입으로 캐스팅하기 위해 문자열 리터럴 사용
     qvec_str = "[" + ",".join(f"{v:.6f}" for v in qvec) + "]"
 
+    # ─────────────────────────────────────────────
+    # 3) pgvector 검색 + (선택적) 지역 하드필터
+    # ─────────────────────────────────────────────
     sql = """
         SELECT
             d.id,
@@ -182,6 +205,7 @@ def _hybrid_search_documents(
     params: Dict[str, Any] = {"qvec": qvec_str}
 
     if region_filter:
+        # retrieval_planner와 동일한 지역 하드필터
         sql += " WHERE TRIM(d.region) = %(region)s::text"
         params["region"] = region_filter
 
@@ -197,6 +221,9 @@ def _hybrid_search_documents(
             cur.execute(sql, params)
             rows = cur.fetchall()
 
+    # ─────────────────────────────────────────────
+    # 4) 결과 가공 → rag_snippets 포맷
+    # ─────────────────────────────────────────────
     results: List[Dict[str, Any]] = []
     for r in rows:
         similarity = float(r[6]) if r[6] is not None else None
@@ -225,8 +252,10 @@ def _hybrid_search_documents(
             }
         )
 
+    # similarity 내림차순 정렬 (SQL에서도 정렬하지만 혹시 몰라 한 번 더)
     results.sort(key=lambda x: (x["similarity"] is not None, x["similarity"]), reverse=True)
 
+    # rag_snippets 포맷으로 재구성
     snippets: List[Dict[str, Any]] = []
     for r in results:
         snippet_entry: Dict[str, Any] = {
@@ -326,14 +355,26 @@ def policy_retriever_node(state: State) -> State:
             rag_docs, keywords = _hybrid_search_documents(
                 query_text=search_text,
                 merged_profile=merged_profile,
-                top_k=8,
+                top_k=RAW_TOP_K,
             )
+
         except Exception as e:  # noqa: E722
             print(f"[policy_retriever_node] document search failed: {e}")
             rag_docs = []
             keywords = extract_keywords(search_text, max_k=8)
     else:
         keywords = extract_keywords(search_text or query_text, max_k=8)
+    # region filter: merged_profile 내 residency_sgg_code(or region_gu)을 사용
+    region_filter = None
+    if merged_profile:
+        # 우선 residency_sgg_code, 없으면 region_gu를 사용
+        region_val = merged_profile.get("residency_sgg_code")
+        if region_val is None:
+            region_val = merged_profile.get("region_gu")
+        region_filter = _sanitize_region(region_val)
+        if region_filter is None:
+            # 디버깅용 로그 정도로만 사용 (필수 아님)
+            print("[retrieval_planner] region_filter empty or missing")
 
     # --- 프로필 기반 후보 필터 적용 ---
     if merged_profile and rag_docs:
@@ -341,6 +382,42 @@ def policy_retriever_node(state: State) -> State:
         rag_docs = filter_candidates_by_profile(rag_docs, merged_profile)
         after = len(rag_docs)
         print(f"[policy_retriever_node] profile filter: {before} -> {after} candidates")
+
+    # --- similarity 기반 소프트 컷오프 (최소 개수 보장) ---
+    if rag_docs:
+        def _get_sim(d: Dict[str, Any]) -> Optional[float]:
+            v = d.get("similarity")
+            try:
+                return float(v) if v is not None else None
+            except (TypeError, ValueError):
+                return None
+
+        sims = [s for s in (_get_sim(d) for d in rag_docs) if s is not None]
+        if sims:
+            filtered_by_sim = [d for d in rag_docs if (_get_sim(d) or 0.0) >= SIMILARITY_FLOOR]
+            if len(filtered_by_sim) >= MIN_CANDIDATES_AFTER_FLOOR:
+                print(
+                    f"[policy_retriever_node] similarity floor {SIMILARITY_FLOOR}: "
+                    f"{len(rag_docs)} -> {len(filtered_by_sim)} candidates"
+                )
+                rag_docs = filtered_by_sim
+
+        # similarity 기준 정렬 (None은 뒤로)
+        rag_docs.sort(
+            key=lambda d: (
+                _get_sim(d) is None,
+                -(_get_sim(d) or 0.0),
+            )
+        )
+
+        # LLM에 넘길 최대 컨텍스트 개수 제한
+        if len(rag_docs) > CONTEXT_TOP_K:
+            print(
+                f"[policy_retriever_node] context_top_k cap {CONTEXT_TOP_K}: "
+                f"{len(rag_docs)} -> {CONTEXT_TOP_K} candidates"
+            )
+            rag_docs = rag_docs[:CONTEXT_TOP_K]
+
 
     # --- 대화 저장 안내 스니펫 추가 ---
     end_requested = bool(state.get("end_session"))

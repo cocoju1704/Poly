@@ -98,7 +98,8 @@ class EphemeralContextState(TypedDict, total=False):
     profile_id: Optional[int]           # DB profiles.id (있으면 persist에서 사용)
     ephemeral_profile: Dict[str, Any]   # 세션 중 추출된 임시 프로필 정보
     ephemeral_collection: Dict[str, Any]  # 세션 중 추출된 관심사/사례 정보 등
-
+    merged_profile: Dict[str, Any]  # DB 프로필 + 세션 중 추출된 임시 프로필 정보
+    merged_collection: Dict[str, Any]  # DB 컬렉션 + 세션 중 추출된 임시 컬렉션 정보
     # ── RAG 관련 ────────────────────────────────────────
     retrieval: Dict[str, Any]            # retrieval_planner 집계 결과
     rag_snippets: Annotated[List[RagSnippet], operator.add]
