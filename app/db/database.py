@@ -630,61 +630,30 @@ def update_profile(profile_id: int, profile_data: Dict[str, Any]) -> bool:
         try:
             set_clauses = []
             values = []
-
-            # 프론트엔드 키를 DB 컬럼에 맞게 변환
-            column_map = {
-                "name": "name",
-                "birthDate": "birth_date",
-                "gender": "sex",  # Frontend 'gender' maps to DB 'sex'
-                "location": "residency_sgg_code",  # Frontend 'location' maps to DB 'residency_sgg_code'
-                "healthInsurance": "insurance_type",  # Frontend 'healthInsurance' maps to DB 'insurance_type'
-                "incomeLevel": "median_income_ratio",  # Frontend 'incomeLevel' maps to DB 'median_income_ratio'
-                "basicLivelihood": "basic_benefit_type",  # Frontend 'basicLivelihood' maps to DB 'basic_benefit_type'
-                "disabilityLevel": "disability_grade",  # Frontend 'disabilityLevel' maps to DB 'disability_grade'
-                "longTermCare": "ltci_grade",  # Frontend 'longTermCare' maps to DB 'ltci_grade'
-                "pregnancyStatus": "pregnant_or_postpartum12m",  # Frontend 'pregnancyStatus' maps to DB 'pregnant_or_postpartum12m'
-            }
-
-            for frontend_key, db_column in column_map.items():
-                if frontend_key in profile_data:
-                    value = profile_data[frontend_key]
-
-                    # 타입 변환
-                    if frontend_key == "gender":
-                        value = GENDER_MAPPING.get(value, "M")
-                    elif frontend_key == "healthInsurance":
-                        value = HEALTH_INSURANCE_MAPPING.get(value, "EMPLOYED")
-                    elif frontend_key == "basicLivelihood":
-                        value = BASIC_LIVELIHOOD_MAPPING.get(value, "NONE")
-                    elif frontend_key == "disabilityLevel":
-                        value = {
-                            "미등록": 0,
-                            "심한 장애": 1,
-                            "심하지 않은 장애": 2,
-                        }.get(value, None)
-                    elif (
-                        frontend_key == "longTermCare"
-                    ):  # No change needed, already matches
-                        pass
-                    elif frontend_key == "pregnancyStatus":
-                        value = value == "임신중" or value == "출산후12개월이내"
-                    elif frontend_key == "incomeLevel":
-                        value = float(value) if value is not None else None
-                    elif frontend_key == "birthDate":
-                        # Assuming birthDate is already in 'YYYY-MM-DD' string format from frontend
-                        pass
-
-                    set_clauses.append(f"{db_column} = %s")
-                    values.append(value)
+            
+            # API 계층에서 이미 DB 컬럼명으로 변환되었으므로 직접 사용
+            for db_column, value in profile_data.items():
+                # 'sex' 컬럼의 경우, '남성'/'여성' 값을 'M'/'F'로 변환
+                if db_column == "sex":
+                    final_value = GENDER_MAPPING.get(value, value) # M/F가 아니면 원본 값 사용
+                else:
+                    final_value = value
+                
+                set_clauses.append(f"{db_column} = %s")
+                values.append(final_value)
 
             if not set_clauses:
                 logger.warning(f"업데이트할 데이터 없음: profile_id={profile_id}")
                 return True
 
+            # updated_at 필드 추가
+            set_clauses.append("updated_at = NOW()")
+
             values.append(profile_id)
             sql = f"UPDATE profiles SET {', '.join(set_clauses)} WHERE id = %s"
 
             with conn.cursor() as cur:
+                logger.info(f"Executing SQL: {cur.mogrify(sql, values).decode('utf-8')}") # 디버깅용 SQL 출력
                 cur.execute(sql, values)
                 if cur.rowcount == 0:
                     conn.rollback()
