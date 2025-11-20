@@ -7,6 +7,11 @@ DB나 LLM 로직을 직접 처리하지 않고, 모두 HTTP 요청을 통해 Fas
 import os
 from typing import List, Dict, Any, Optional, Iterator, Tuple
 import requests
+import streamlit as st
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 # FastAPI 서버의 기본 URL (개발 환경 기준)
 # 실제 환경에서는 환경 변수를 통해 관리해야 합니다.
@@ -40,6 +45,48 @@ class BackendService:
         except requests.exceptions.RequestException as e:
             return {"status": "error", "message": f"백엔드 연결 실패: {e}"}
 
+        # 11.20 수정: 공통 요청 메서드 추가
+
+    def _make_request(
+        self,
+        method: str,
+        endpoint: str,
+        token: Optional[str] = None,
+        json_data: Optional[Dict[str, Any]] = None,
+        params: Optional[Dict[str, Any]] = None,
+    ) -> Tuple[bool, Dict[str, Any]]:
+        """
+        API 요청을 생성하고 응답을 처리하는 중앙 메소드
+
+        Args:
+            method (str): HTTP 메소드 ('get', 'post', 'put', 'delete')
+            endpoint (str): API 엔드포인트 (예: '/api/v1/users/me')
+            token (str, optional): 인증을 위한 JWT 토큰
+            json_data (dict, optional): POST/PUT 요청의 body
+            params (dict, optional): GET 요청의 쿼리 파라미터
+
+        Returns:
+            Tuple[bool, Dict[str, Any]]: (성공 여부, 응답 데이터 또는 에러 메시지)
+        """
+        url = f"{FASTAPI_BASE_URL}{endpoint}"
+        headers = {"Authorization": f"Bearer {token}"} if token else {}
+
+        try:
+            response = requests.request(
+                method, url, headers=headers, json=json_data, params=params, timeout=30
+            )
+            response.raise_for_status()  # 2xx 상태 코드가 아니면 HTTPError 발생
+            return True, response.json()
+        except requests.exceptions.HTTPError as e:
+            # API에서 반환한 에러 메시지를 포함
+            error_detail = e.response.json().get("detail", str(e))
+            logger.error(f"API HTTP 오류 발생 ({url}): {error_detail}")
+            return False, {"error": error_detail}
+        except requests.exceptions.RequestException as e:
+            # 네트워크 연결 오류 등
+            logger.error(f"API 요청 중 오류 발생 ({url}): {e}")
+            return False, {"error": f"API 서버에 연결할 수 없습니다: {e}"}
+
     def send_chat_message(
         self,
         session_id: Optional[str],
@@ -52,7 +99,7 @@ class BackendService:
         새로운 통합 /api/chat 엔드포인트로 채팅 메시지를 전송합니다.
         스트리밍을 사용하지 않고 전체 응답을 한 번에 받습니다.
         """
-        url = f"{FASTAPI_BASE_URL}/api/v1/chat"
+        url = f"{FASTAPI_BASE_URL}/api/v1/chat/stream"
         ok, user_profile = backend_service.get_user_profile(token)
 
         if not ok:
@@ -64,10 +111,7 @@ class BackendService:
             "profile_id": profile_id,  # 👈 요청 payload에 포함
             "user_input": user_input,
             "user_action": user_action,
-            "client_meta": {
-                "ui_lang": "ko",
-                "app_version": "streamlit-v1"
-            }
+            "client_meta": {"ui_lang": "ko", "app_version": "streamlit-v1"},
         }
         headers = {}
         if token:
@@ -87,6 +131,24 @@ class BackendService:
                 "save_result": None,
                 "debug": {},
             }
+
+    # 11.20 수정: 채팅 기록 저장 메서드 추가
+    def save_chat_history(
+        self,
+        token: str,
+        conversation_id: Optional[str],
+        profile_id: int,
+        messages: List[Dict[str, Any]],
+    ) -> Tuple[bool, Dict[str, Any]]:
+        """현재 대화 세션의 전체 메시지를 DB에 저장합니다."""
+        payload = {
+            "conversation_id": conversation_id,
+            "profile_id": profile_id,
+            "messages": messages,
+        }
+        return self._make_request(
+            "post", "/api/v1/chat/save", token=token, json_data=payload
+        )
 
     # ==============================================================================
     # 사용자 인증 및 프로필 API 호출
@@ -126,7 +188,7 @@ class BackendService:
     def login_user(self, username: str, password: str) -> Tuple[bool, Any]:
         """로그인 API를 호출하고 성공 시 토큰을 반환합니다."""
         url = f"{FASTAPI_BASE_URL}/api/v1/user/login"
-        print(f"DEBUG: Attempting to log in to: {url}") # 디버그용 출력 추가
+        print(f"DEBUG: Attempting to log in to: {url}")  # 디버그용 출력 추가
         payload = {"username": username, "password": password}
         try:
             response = requests.post(url, json=payload, timeout=10)
@@ -153,7 +215,9 @@ class BackendService:
                 return True, response.json().get("message", "사용 가능한 아이디입니다.")
             else:
                 # 409 Conflict (이미 존재) 또는 다른 오류
-                error_detail = response.json().get("detail", "이미 사용 중인 아이디입니다.")
+                error_detail = response.json().get(
+                    "detail", "이미 사용 중인 아이디입니다."
+                )
                 return False, error_detail
         except requests.exceptions.RequestException as e:
             return False, f"백엔드 연결 실패: {e}"
