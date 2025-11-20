@@ -786,6 +786,11 @@ def policy_retriever_node(state: State) -> State:
         "used_rag": use_rag,
         "profile_ctx": merged_profile,
         "collection_ctx": merged_collection,
+        "collection_layers": {       # ★ 추가
+            "L0": collection_L0,
+            "L1": collection_L1,
+            "L2": collection_L2,
+        },
         "rag_snippets": rag_docs,
         "keywords": final_keywords,
         "search_text": search_text,  # 디버깅/로그용 전체 텍스트
@@ -798,8 +803,14 @@ def policy_retriever_node(state: State) -> State:
     state["context"] = {
         "profile": merged_profile,
         "collection": merged_collection,
+        "collection_layers": {       # ★ 추가
+            "L0": collection_L0,
+            "L1": collection_L1,
+            "L2": collection_L2,
+        },
         "documents": rag_docs,
         "summary": rolling_summary,
     }
 
     return state
+

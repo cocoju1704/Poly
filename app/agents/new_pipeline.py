@@ -360,7 +360,7 @@ if __name__ == "__main__":
     out3 = app.invoke({
         "session_id": "sess-001",
         "profile_id": 76,
-        "user_input": "장애인 관련 지원사업 알려주세요.",
+        "user_input": "치매 관련 지원사업 알려주세요.",
         "rolling_summary": out.get("rolling_summary"),
         "end_session": False,
     }, config=cfg)
