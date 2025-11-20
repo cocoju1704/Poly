@@ -337,7 +337,7 @@ if __name__ == "__main__":
     out = app.invoke({
         "session_id": "sess-001",
         "profile_id": 76,
-        "user_input": "저는 중위소득 50%이고 당뇨가 있어요. 받을 수 있는 의료 지원이 궁금해요.",
+        "user_input": "췌장암이 있고, 현재 항암치료 중입니다. 제가 받을 수 있는 혜택이 궁금해요",
         "rolling_summary": None,
         "end_session": False,
     }, config=cfg)
@@ -348,7 +348,7 @@ if __name__ == "__main__":
     out2 = app.invoke({
         "session_id": "sess-001",
         "profile_id": 76,
-        "user_input": "저는 췌장암이 있고 현재 항암치료중입니다. 제가 받을 수 있는 혜택이 궁금해요",
+        "user_input": "저는 B형 간염도 있습니다. 관련된 지원 정책도 알려주세요.",
         "rolling_summary": out.get("rolling_summary"),
         "end_session": False,
     }, config=cfg)

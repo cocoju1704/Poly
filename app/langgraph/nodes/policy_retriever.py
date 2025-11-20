@@ -42,6 +42,7 @@ from app.langgraph.state.ephemeral_context import State
 from app.langgraph.utils.retrieval_filters import filter_candidates_by_profile
 
 load_dotenv()
+from datetime import datetime
 
 # -------------------------------------------------------------------
 # DB URL (retrieval_planner.py 그대로)
@@ -106,9 +107,7 @@ def extract_keywords(text: str, max_k: int = 8) -> List[str]:
         return []
     tokens = re.findall(r"[가-힣A-Za-z0-9]+", text)
     stop = {
-        "그리고",
-        "하지만",
-        "근데",
+        "그리고", "하지만", "근데", "혹시", "만약", "받을", 
         "가능",
         "문의",
         "신청",
@@ -119,6 +118,8 @@ def extract_keywords(text: str, max_k: int = 8) -> List[str]:
         "상태",
         "현재",
         "질문",
+        "혜택", "지원",
+        "제가", "나는", "저는", "내가",
     }
     out, seen = [], set()
     for t in tokens:
@@ -130,7 +131,19 @@ def extract_keywords(text: str, max_k: int = 8) -> List[str]:
                 if len(out) >= max_k:
                     break
     return out
-
+def _parse_created_at(tri: Dict[str, Any]) -> Optional[datetime]:
+    """
+    triple의 created_at을 datetime으로 파싱.
+    - 없거나 파싱 실패하면 None 반환.
+    """
+    v = tri.get("created_at")
+    if not v:
+        return None
+    # 예: "2025-11-20T15:17:13.581611"
+    try:
+        return datetime.fromisoformat(str(v))
+    except Exception:
+        return None
 
 # -------------------------------------------------------------------
 # BM25 Re-ranking helpers
@@ -143,25 +156,56 @@ def _tokenize_for_bm25(text: str) -> List[str]:
 
 
 def _build_bm25_terms(query_text: str, merged_collection: Optional[Dict[str, Any]]) -> List[str]:
-    """사용자 질문 + 컬렉션(질환/병력 등) 기반 BM25 쿼리 토큰 구성."""
-    terms: List[str] = []
-    # 1) 질문에서 키워드 추출
-    terms.extend(extract_keywords(query_text or "", max_k=8))
+    """
+    BM25용 쿼리 토큰 구성.
 
-    # 2) 컬렉션 triple에서 object/code에 포함된 키워드 추가 (중복 제거)
+    계층 구조:
+      1) 현재 유저 질문 키워드: weight 강화를 위해 2번 넣는다.
+      2) 컬렉션 triple 키워드: 최근 RECENT_TRIPLES_LIMIT 개수만 1번 넣는다.
+    """
+    terms: List[str] = []
+
+    # -------------------------------
+    # 1) 현재 유저 쿼리 → 키워드 2번 삽입
+    # -------------------------------
+    query_terms = extract_keywords(query_text or "", max_k=8)
+
+    # 현재 질문 키워드를 2번 넣어서 BM25에서 더 큰 영향력을 주기
+    terms.extend(query_terms)
+    terms.extend(query_terms)
+
+    # -------------------------------
+    # 2) 컬렉션 triple → 최근 N개만 토큰화하여 1번 삽입
+    # -------------------------------
     if merged_collection and isinstance(merged_collection, dict):
         triples = merged_collection.get("triples") or []
-        for tri in triples:
-            if not isinstance(tri, dict):
-                continue
-            obj = tri.get("object") or ""
-            code = tri.get("code") or ""
-            for tok in _tokenize_for_bm25(str(obj) + " " + str(code)):
-                if tok not in terms:
-                    terms.append(tok)
+        triples = [t for t in triples if isinstance(t, dict)]
+
+        if triples:
+            # created_at 기준 “가장 최근 triple” 순으로 정렬
+            triples_sorted = sorted(
+                triples,
+                key=lambda t: _parse_created_at(t) or datetime.min,
+                reverse=True,
+            )
+            RECENT_TRIPLES_LIMIT = 12
+            # 최근 RECENT_TRIPLES_LIMIT 개수만 사용
+            if RECENT_TRIPLES_LIMIT > 0:
+                triples_sorted = triples_sorted[:RECENT_TRIPLES_LIMIT]
+
+            # object/code 기반 토큰 추가 (1번만)
+            for tri in triples_sorted:
+                obj = tri.get("object") or ""
+                code = tri.get("code") or ""
+                toks = _tokenize_for_bm25(f"{obj} {code}")
+
+                for tok in toks:
+                    # 현재 유저 쿼리에서 온 terms는 이미 2번 들어가 있음
+                    # 컬렉션 키워드는 1번만 넣으므로 중복 제거
+                    if tok not in terms:
+                        terms.append(tok)
+
     return terms
-
-
 def _apply_bm25_rerank(
     docs: List[Dict[str, Any]],
     query_terms: List[str],
@@ -295,7 +339,7 @@ def _hybrid_search_documents(
         return [], []
 
     # 키워드 추출 (디버깅/로그용)
-    keywords = extract_keywords(query_text, max_k=8)
+    debug_keywords = extract_keywords(query_text, max_k=8)
 
     # ─────────────────────────────────────────────
     # 1) region filter: merged_profile 내 residency_sgg_code(or region_gu)을 사용
@@ -321,7 +365,7 @@ def _hybrid_search_documents(
         qvec = _embed_text(query_text)
     except Exception as e:
         print(f"[policy_retriever_node] embed failed: {e}")
-        return [], keywords
+        return [], debug_keywords
 
     # psycopg3에서 VECTOR 타입으로 캐스팅하기 위해 문자열 리터럴 사용
     qvec_str = "[" + ",".join(f"{v:.6f}" for v in qvec) + "]"
@@ -339,7 +383,8 @@ def _hybrid_search_documents(
             d.url,
             MAX(1 - (e.embedding <=> %(qvec)s::vector)) AS similarity
         FROM documents d
-        JOIN embeddings e ON d.id = e.doc_id AND e.field = 'requirements'
+        JOIN embeddings e ON d.id = e.doc_id AND (e.field = 'requirements' OR e.field = 'title')
+
     """
     params = {"qvec": qvec_str}
 
@@ -423,7 +468,7 @@ def _hybrid_search_documents(
             snippet_entry["benefits"] = r["benefits"]
         snippets.append(snippet_entry)
 
-    return snippets, keywords
+    return snippets, debug_keywords
 
 
 # -------------------------------------------------------------------
@@ -479,14 +524,29 @@ def policy_retriever_node(state: State) -> State:
     history_text: Optional[str] = state.get("history_text")
     rolling_summary: Optional[str] = state.get("rolling_summary")
 
-    # --- 검색용 search_text 구성 ---
-    search_parts: List[str] = []
-    if rolling_summary:
-        search_parts.append("[이전 요약]\n" + rolling_summary)
-    if history_text:
-        search_parts.append("[최근 대화]\n" + history_text)
+    # 1) 검색용 search_text는 "프로필 + 컬렉션 + 현재 질문" 위주로만
+    search_parts = []
+
     if profile_summary_text:
         search_parts.append(profile_summary_text)
+
+    # 컬렉션의 질환/치료를 문장으로 풀어주기 (간단 버전)
+    if merged_collection and isinstance(merged_collection, dict):
+        diseases = []
+        treatments = []
+        for tri in merged_collection.get("triples") or []:
+            if tri.get("predicate") == "disease":
+                diseases.append(tri.get("object"))
+            elif tri.get("predicate") == "treatment":
+                treatments.append(tri.get("object"))
+        extra_lines = []
+        if diseases:
+            extra_lines.append("주요 질환: " + ", ".join(diseases))
+        if treatments:
+            extra_lines.append("주요 치료: " + ", ".join(treatments))
+        if extra_lines:
+            search_parts.append("\n".join(extra_lines))
+
     if query_text:
         search_parts.append("현재 질문: " + query_text.strip())
 
@@ -500,8 +560,8 @@ def policy_retriever_node(state: State) -> State:
 
     if use_rag and search_text:
         try:
-            rag_docs, keywords = _hybrid_search_documents(
-                query_text=search_text,
+            rag_docs, _ = _hybrid_search_documents(
+                query_text=search_text,   # 검색에는 "프로필+컬렉션+현재 질문"만 사용
                 merged_profile=merged_profile,
                 top_k=RAW_TOP_K,
             )
@@ -583,15 +643,26 @@ def policy_retriever_node(state: State) -> State:
                 "score": 1.0,
             }
         )
+    # 1) "현재 질문"에서 뽑은 키워드
+    user_kw = extract_keywords(query_text, max_k=8)
 
+    # 2) bm25_terms와 합쳐서 중복 제거
+    final_keywords: List[str] = []
+    seen = set()
+    for t in user_kw + bm25_terms:
+        if t not in seen:
+            seen.add(t)
+            final_keywords.append(t)
+            if len(final_keywords) >= 12:  # 필요하면 상한
+                break
     # --- retrieval 세팅 ---
     retrieval: Dict[str, Any] = {
         "used_rag": use_rag,
         "profile_ctx": merged_profile,
         "collection_ctx": merged_collection,
         "rag_snippets": rag_docs,
-        "keywords": keywords,
-        "debug_search_text": search_text,
+        "keywords": final_keywords,        # 원하면 query_text + collection 기반으로 재구성
+        "search_text": search_text,   # 여기만 전체 텍스트
         "profile_summary_text": profile_summary_text,
     }
     state["retrieval"] = retrieval
