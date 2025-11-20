@@ -178,6 +178,21 @@ def initialize_db():
                 except psycopg2.errors.DuplicateObject:
                     pass
 
+                # 11.20 추가: conversations 테이블의 잘못된 UNIQUE 제약조건 제거
+                try:
+                    # 제약조건 이름 'conversations_profile_id_key'를 사용하여 삭제 시도
+                    cur.execute(
+                        """
+                        ALTER TABLE public.conversations
+                        DROP CONSTRAINT IF EXISTS conversations_profile_id_key;
+                        """
+                    )
+                    logger.info("Constraint 'conversations_profile_id_key' checked/removed from 'conversations'.")
+                except psycopg2.Error as e:
+                    # 제약조건이 없거나 다른 이름일 경우 오류가 발생할 수 있으므로 경고만 로깅
+                    logger.warning(f"Could not drop constraint 'conversations_profile_id_key': {e}")
+                    conn.rollback() # 오류 발생 시 롤백
+
                 conn.commit()
 
             logger.info("Database initialization complete.")

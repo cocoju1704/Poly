@@ -8,13 +8,24 @@ load_dotenv()
 
 from fastapi import FastAPI
 from starlette.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
 from app.api.v1 import user, chat
+from app.db.database import initialize_db
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # 애플리케이션 시작 시
+    print("INFO:     애플리케이션 시작 - 데이터베이스 초기화를 시도합니다.")
+    initialize_db()
+    yield
+    # 애플리케이션 종료 시 (필요 시 코드 추가)
 
 app = FastAPI(
     title="HealthInformer API",
     description="Unified /api/chat endpoint to handle entire session flow.",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 # CORS 설정 추가 (Streamlit과 통신 위해)
