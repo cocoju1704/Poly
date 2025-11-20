@@ -46,31 +46,14 @@ app/api/
 **역할:**
 - FastAPI 라우터 정의
 - 요청/응답 검증 (Pydantic 스키마 사용)
-- HTTP 상태 코드 관리
-- 백엔드 비즈니스 로직 호출
 
-### 2.2 백엔드 비즈니스 로직 (`app/backend/`)
+### 2.2 백엔드 비즈니스 로직 (`app/agents/`)
 
-```
-app/backend/
-├── llm_manager.py           # LLM 모델 연동 및 관리 로직
-│   ├── LLM 모델 초기화
-│   ├── 프롬프트 생성
-│   ├── 모델 호출 및 응답 처리
-│   └── 스트리밍 응답 생성
-│
-└── models.py                # 백엔드 내부 데이터 모델
-    ├── ChatRequest
-    ├── ChatResponse
-    ├── UserProfile
-    └── 기타 내부 모델
-```
 
 **역할:**
-- 비즈니스 로직 구현
-- LLM 모델과의 상호작용
-- 데이터 처리 및 변환
-- 응답 생성
+- LangGraph를 이용한 복잡한 챗봇 비즈니스 로직 구현
+- 사용자의 질문 의도 파악 및 정보 검색(RAG) 수행
+- LLM 모델 호출 및 최종 답변 생성
 
 ### 2.3 데이터베이스 계층 (`app/db/`)
 
@@ -78,33 +61,19 @@ app/backend/
 app/db/
 ├── config.py                # 데이터베이스 연결 설정
 │   ├── DB 호스트, 포트, 사용자명, 비밀번호
-│   ├── 연결 풀 설정
-│   └── 타임아웃 설정
 │
-├── database.py              # 데이터베이스 연결 및 CRUD 함수
+├── database.py              # DB 연결 및 사용자/프로필 CRUD 함수
 │   ├── initialize_db()      # DB 초기화 및 테이블 생성
-│   ├── get_connection()     # DB 연결 획득
-│   ├── create_user()        # 사용자 생성
-│   ├── get_user()           # 사용자 조회
-│   ├── update_user()        # 사용자 수정
-│   └── delete_user()        # 사용자 삭제
+│   ├── get_db_connection()  # DB 연결 컨텍스트 매니저
+│   ├── create_user_and_profile()
+│   ├── get_user_and_profile_by_id()
+│   ├── update_profile()
+│   └── 등 사용자/프로필 관련 함수 다수
 │
-├── db_core.py               # 데이터베이스 핵심 로직
-│   ├── 트랜잭션 관리
-│   ├── 쿼리 실행
-│   └── 결과 매핑
+├── chat_repository.py       # 대화 저장소 (Repository 패턴)
+│   └── save_full_conversation() # 대화/메시지 저장 및 업데이트
 │
-├── normalizer.py            # 데이터 정규화
-│   ├── 데이터 검증
-│   ├── 형식 변환
-│   └── 데이터 정제
-│
-└── user_repository.py       # 사용자 저장소 (Repository 패턴)
-    ├── find_by_id()
-    ├── find_by_email()
-    ├── save()
-    ├── update()
-    └── delete()
+└── db_core.py               # (현재 파일 목록에 없음, database.py에 통합된 것으로 보임)
 ```
 
 **역할:**
