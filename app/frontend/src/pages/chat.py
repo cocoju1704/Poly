@@ -177,19 +177,16 @@ def render_chatbot_main():
             elif message["role"] == "assistant":
                 # AI 응답 시작
                 st.markdown(
-                    """
+                    f"""
                     <div class="chat-message-assistant">
                         <div class="chat-avatar">AI</div>
                         <div style="flex: 1;">
                             <div class="chat-bubble-assistant">
+				<p>{message["content"]}</p>
+		            </div>
                 """,
                     unsafe_allow_html=True,
                 )
-
-                # 메시지 내용
-                st.markdown(message["content"])
-
-                st.markdown("</div>", unsafe_allow_html=True)
 
                 # 정책 카드가 있으면 표시
                 if "policies" in message:
