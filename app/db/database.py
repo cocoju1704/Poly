@@ -24,7 +24,7 @@ if DATABASE_URL:
     # asyncpg 프로토콜 제거 (psycopg2는 postgresql:// 사용)
     db_url = DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
     parsed = urlparse(db_url)
-    
+
     DB_NAME = parsed.path[1:]  # '/team02' -> 'team02'
     DB_USER = parsed.username
     DB_PASSWORD = parsed.password
@@ -187,11 +187,15 @@ def initialize_db():
                         DROP CONSTRAINT IF EXISTS conversations_profile_id_key;
                         """
                     )
-                    logger.info("Constraint 'conversations_profile_id_key' checked/removed from 'conversations'.")
+                    logger.info(
+                        "Constraint 'conversations_profile_id_key' checked/removed from 'conversations'."
+                    )
                 except psycopg2.Error as e:
                     # 제약조건이 없거나 다른 이름일 경우 오류가 발생할 수 있으므로 경고만 로깅
-                    logger.warning(f"Could not drop constraint 'conversations_profile_id_key': {e}")
-                    conn.rollback() # 오류 발생 시 롤백
+                    logger.warning(
+                        f"Could not drop constraint 'conversations_profile_id_key': {e}"
+                    )
+                    conn.rollback()  # 오류 발생 시 롤백
 
                 conn.commit()
 
@@ -341,7 +345,7 @@ def create_user_and_profile(user_data: Dict[str, Any]) -> Tuple[bool, str]:
                 # 3. 생성된 프로필 ID 가져오기
                 main_profile_id = cur.fetchone()[0]
 
-                # 4. collections 테이블에 초기 데이터 추가 (임신 여부만)
+            # 4. collections 테이블에 초기 데이터 추가 (임신 여부만)
                 if pregnant_or_postpartum12m:
                     pregnancy_detail = user_data.get(
                         "pregnant_or_postpartum12m", "임신중"
@@ -630,15 +634,17 @@ def update_profile(profile_id: int, profile_data: Dict[str, Any]) -> bool:
         try:
             set_clauses = []
             values = []
-            
+
             # API 계층에서 이미 DB 컬럼명으로 변환되었으므로 직접 사용
             for db_column, value in profile_data.items():
                 # 'sex' 컬럼의 경우, '남성'/'여성' 값을 'M'/'F'로 변환
                 if db_column == "sex":
-                    final_value = GENDER_MAPPING.get(value, value) # M/F가 아니면 원본 값 사용
+                    final_value = GENDER_MAPPING.get(
+                        value, value
+                    )  # M/F가 아니면 원본 값 사용
                 else:
                     final_value = value
-                
+
                 set_clauses.append(f"{db_column} = %s")
                 values.append(final_value)
 
@@ -653,7 +659,9 @@ def update_profile(profile_id: int, profile_data: Dict[str, Any]) -> bool:
             sql = f"UPDATE profiles SET {', '.join(set_clauses)} WHERE id = %s"
 
             with conn.cursor() as cur:
-                logger.info(f"Executing SQL: {cur.mogrify(sql, values).decode('utf-8')}") # 디버깅용 SQL 출력
+                logger.info(
+                    f"Executing SQL: {cur.mogrify(sql, values).decode('utf-8')}"
+                )  # 디버깅용 SQL 출력
                 cur.execute(sql, values)
                 if cur.rowcount == 0:
                     conn.rollback()

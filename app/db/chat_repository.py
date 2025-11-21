@@ -151,6 +151,19 @@ def save_full_conversation(
                     record["created_at"],
                 ),
             )
+            
+            # 3-3. collections 테이블에 메타데이터 기반 추가 정보 삽입
+        for record in message_records:
+            meta = record.get("meta", {})
+            if "policies" in meta and meta["policies"]:
+                for disease in meta["policies"]:
+                    cursor.execute(
+                        """
+                        INSERT INTO collections (profile_id, subject, predicate, object, created_at)
+                        VALUES (%s, %s, %s, %s, NOW())
+                        """,
+                        (profile_id, str(profile_id), "disease", disease)
+                    )
 
         return conversation_id
 
