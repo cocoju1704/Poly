@@ -47,7 +47,9 @@ def save_full_conversation(
         conversation_id = str(uuid.uuid4())
     else:
         # 기존 메시지는 삭제 후 다시 삽입 (UPSERT보다 간단한 구현)
-        cursor.execute("DELETE FROM public.messages WHERE conversation_id = %s", (conversation_id,))
+        cursor.execute(
+            "DELETE FROM public.messages WHERE conversation_id = %s", (conversation_id,)
+        )
 
     # 2. 메타데이터 준비
     now = datetime.now(timezone.utc)
