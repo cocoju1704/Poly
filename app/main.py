@@ -31,6 +31,14 @@ async def lifespan(app: FastAPI):
     print("INFO:     애플리케이션 종료.")
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # 애플리케이션 시작 시
+    print("INFO:     애플리케이션 시작 - 데이터베이스 초기화를 시도합니다.")
+    initialize_db()
+    yield
+    # 애플리케이션 종료 시 (필요 시 코드 추가)
+
 app = FastAPI(
     title="HealthInformer API",
     description="Unified /api/chat endpoint to handle entire session flow.",

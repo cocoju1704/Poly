@@ -35,15 +35,17 @@ def handle_send_message(message: str, user_action: str = "none"):
 
     if not st.session_state.get("is_loading", False):
         st.session_state["is_loading"] = True
-    user_message = {  # 11.21 user_action이 'save'일 때는 사용자 메시지를 추가하지 않도록 수정
-        "id": str(uuid.uuid4()),
-        "role": "user",
-        "content": message,
-        "timestamp": time.time(),
-    }
+    user_message = (
+        {  # 11.21 user_action이 'save'일 때는 사용자 메시지를 추가하지 않도록 수정
+            "id": str(uuid.uuid4()),
+            "role": "user",
+            "content": message,
+            "timestamp": time.time(),
+        }
+    )
     if "messages" not in st.session_state:
         st.session_state.messages = []
-    if user_action != 'save':
+    if user_action != "save":
         st.session_state.messages.append(user_message)
 
     try:
@@ -54,7 +56,6 @@ def handle_send_message(message: str, user_action: str = "none"):
                 session_id=st.session_state.get("session_id"),  # 세션 ID 전달
                 token=token,  # 인증 토큰 전달
                 user_input=message,
-                user_action=user_action, # 'save' 액션 전달
                 profile_id=st.session_state.get("current_profile_id"),
             )
 
@@ -123,7 +124,9 @@ def save_messages_to_backend():
     with st.spinner("대화 내용을 저장 중..."):
         success, result = backend_service.save_chat_history(
             token=token,
-            conversation_id=st.session_state.get("conversation_id"), # 💡 [추가] 현재 대화 ID 전송
+            conversation_id=st.session_state.get(
+                "conversation_id"
+            ),  # 💡 [추가] 현재 대화 ID 전송
             profile_id=st.session_state.current_profile_id,
             messages=messages_to_save,
         )
@@ -255,13 +258,13 @@ def render_chatbot_main():
                 # 💡 [수정] 대화 저장 시도 후, 성공했을 때만 초기화
                 if save_messages_to_backend():
                     st.session_state.messages = []
-                    st.session_state.conversation_id = None # 💡 [추가] 대화 ID 초기화
+                    st.session_state.conversation_id = None  # 💡 [추가] 대화 ID 초기화
                     st.session_state.save_chat_confirmation = False
                     st.rerun()
         with col2:
             if st.button("🗑️ 저장하지 않고 초기화", use_container_width=True):
                 st.session_state.messages = []
-                st.session_state.conversation_id = None # 💡 [추가] 대화 ID 초기화
+                st.session_state.conversation_id = None  # 💡 [추가] 대화 ID 초기화
                 st.session_state.save_chat_confirmation = False
                 st.rerun()
         with col3:

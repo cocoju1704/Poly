@@ -608,7 +608,7 @@ def policy_retriever_node(state: State) -> State:
           * profile_summary_text
           * history_text
           * rolling_summary
-      - router: dict (use_rag 등)
+      - router: dict (use_rag, use_user_info 등)
       - user_input: str (현재 질문)  ← info_extractor가 정보부분 제거한 "정책 요청 문장"일 수 있음
 
     출력/갱신:
@@ -617,6 +617,9 @@ def policy_retriever_node(state: State) -> State:
     # raw user query (정보 제거 후 정책 요청 문장일 수 있음)
     query_text = state.get("user_input") or ""
     router_info: Dict[str, Any] = state.get("router") or {}
+
+    # 새 플래그: use_user_info (없으면 기본 True로 호환)
+    use_user_info = bool(router_info.get("use_user_info", True))
 
     merged_profile: Optional[Dict[str, Any]] = state.get("merged_profile")
     merged_collection: Optional[Dict[str, Any]] = state.get("merged_collection")
@@ -669,18 +672,24 @@ def policy_retriever_node(state: State) -> State:
 
     if use_rag and query_text.strip():
         try:
+            # use_user_info=False 이면 synthetic 쿼리 생성 시에도
+            # profile/collection 정보를 사용하지 않도록 None으로 넘긴다.
+            syn_profile_summary = profile_summary_text if use_user_info else None
+            syn_L0 = collection_L0 if use_user_info else None
+            syn_L1 = collection_L1 if use_user_info else None
+
             # 1) synthetic 여부 판단 + 정책용 embedding query 생성
             embedding_query = _build_synthetic_query(
                 raw_query=query_text,
-                profile_summary_text=profile_summary_text,
-                collection_L0=collection_L0,
-                collection_L1=collection_L1,
+                profile_summary_text=syn_profile_summary,
+                collection_L0=syn_L0,
+                collection_L1=syn_L1,
             )
 
             # 2) 검색에는 embedding_query만 사용
             rag_docs, debug_keywords = _hybrid_search_documents(
                 query_text=embedding_query,
-                merged_profile=merged_profile,
+                merged_profile=merged_profile,   # region filter는 항상 사용
                 top_k=RAW_TOP_K,
             )
         except Exception as e:  # noqa: E722
@@ -690,14 +699,15 @@ def policy_retriever_node(state: State) -> State:
     else:
         debug_keywords = extract_keywords(query_text, max_k=8)
 
+    bm25_terms: List[str] = []
+
     # --- 프로필 기반 후보 필터 적용 (중위소득/기초수급/장애 등 hard filter 역할) ---
-    if merged_profile and rag_docs:
+    #    → use_user_info=True 일 때만 적용
+    if use_user_info and merged_profile and rag_docs:
         before = len(rag_docs)
         rag_docs = filter_candidates_by_profile(rag_docs, merged_profile)
         after = len(rag_docs)
         print(f"[policy_retriever_node] profile filter: {before} -> {after} candidates")
-
-    bm25_terms: List[str] = []
 
     # --- similarity 기반 소프트 컷오프 (최소 개수 보장) + BM25 re-ranking ---
     if rag_docs:
@@ -722,14 +732,16 @@ def policy_retriever_node(state: State) -> State:
                 rag_docs = filtered_by_sim
 
         # --- BM25 기반 re-ranking (컬렉션 계층 기반) ---
-        bm25_terms = _build_bm25_terms_from_layers(
-            collection_L0,
-            collection_L1,
-            collection_L2,
-        )
-        if bm25_terms:
-            print(f"[policy_retriever_node] BM25 re-ranking with terms: {bm25_terms}")
-            _apply_bm25_rerank(rag_docs, bm25_terms)
+        #     → use_user_info=True 일 때만 컬렉션 키워드 반영
+        if use_user_info:
+            bm25_terms = _build_bm25_terms_from_layers(
+                collection_L0,
+                collection_L1,
+                collection_L2,
+            )
+            if bm25_terms:
+                print(f"[policy_retriever_node] BM25 re-ranking with terms: {bm25_terms}")
+                _apply_bm25_rerank(rag_docs, bm25_terms)
 
         # hybrid score(벡터+BM25)를 기준으로 정렬 (None은 뒤로)
         def _get_score(d: Dict[str, Any]) -> Optional[float]:
@@ -784,8 +796,14 @@ def policy_retriever_node(state: State) -> State:
     # --- retrieval 세팅 ---
     retrieval: Dict[str, Any] = {
         "used_rag": use_rag,
+        "use_user_info": use_user_info,  # ★ 추가
         "profile_ctx": merged_profile,
         "collection_ctx": merged_collection,
+        "collection_layers": {       # ★ 계층 정보 유지
+            "L0": collection_L0,
+            "L1": collection_L1,
+            "L2": collection_L2,
+        },
         "rag_snippets": rag_docs,
         "keywords": final_keywords,
         "search_text": search_text,  # 디버깅/로그용 전체 텍스트
@@ -798,8 +816,14 @@ def policy_retriever_node(state: State) -> State:
     state["context"] = {
         "profile": merged_profile,
         "collection": merged_collection,
+        "collection_layers": {       # ★ 계층 그대로
+            "L0": collection_L0,
+            "L1": collection_L1,
+            "L2": collection_L2,
+        },
         "documents": rag_docs,
         "summary": rolling_summary,
+        "use_user_info": use_user_info,  # ★ downstream LLM용 힌트
     }
 
     return state

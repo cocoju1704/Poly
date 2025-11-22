@@ -634,7 +634,6 @@ def update_profile(profile_id: int, profile_data: Dict[str, Any]) -> bool:
         try:
             set_clauses = []
             values = []
-
             # API 계층에서 이미 DB 컬럼명으로 변환되었으므로 직접 사용
             for db_column, value in profile_data.items():
                 # 'sex' 컬럼의 경우, '남성'/'여성' 값을 'M'/'F'로 변환

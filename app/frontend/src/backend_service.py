@@ -212,7 +212,7 @@ class BackendService:
         try:
             response = requests.get(url, timeout=10)
             if response.status_code == 200:
-                return True, response.json().get("message", "사용 가능한 아이디입니다.")
+                return True, response.json().get("message", "")
             else:
                 # 409 Conflict (이미 존재) 또는 다른 오류
                 error_detail = response.json().get(

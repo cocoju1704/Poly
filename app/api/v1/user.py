@@ -151,7 +151,7 @@ async def check_id_availability(username: str, db: Any = Depends(get_db)):
             status_code=status.HTTP_409_CONFLICT,
             detail="이미 사용 중인 아이디입니다.",
         )
-    return SuccessResponse(message="사용 가능한 아이디입니다.")
+    return SuccessResponse(message="")
 
 
 # ===============================================

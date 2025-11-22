@@ -367,31 +367,37 @@ if __name__ == "__main__":
     cfg = {"configurable": {"thread_id": "sess-001"}}
 
     print("=== RUN 1 ===")
-    out = app.invoke({
-        "session_id": "sess-001",
-        "profile_id": 76,
-        "user_input": "췌장암이 있고, 현재 항암치료 중입니다. 제가 받을 수 있는 혜택이 궁금해요",
-        "rolling_summary": None,
-        "end_session": False,
-    }, config=cfg)
+    out = app.invoke(
+        {
+            "session_id": "sess-001",
+            "profile_id": 76,
+            "user_input": "저는 중위소득 50%이고 당뇨가 있어요. 받을 수 있는 의료 지원이 궁금해요.",
+            "rolling_summary": None,
+            "end_session": False,
+        },
+        config=cfg,
+    )
     print("answer:", out.get("answer"))
     print("messages_count:", len(out.get("messages", [])))
 
-    print("=== RUN 2 ===")
-    out2 = app.invoke({
-        "session_id": "sess-001",
-        "profile_id": 76,
-        "user_input": "저는 B형 간염도 있습니다. 관련된 지원 정책도 알려주세요.",
-        "rolling_summary": out.get("rolling_summary"),
-        "end_session": False,
-    }, config=cfg)
+    print("=== RUN 2 (END SESSION) ===")
+    out2 = app.invoke(
+        {
+            "session_id": "sess-001",
+            "profile_id": 76,
+            "user_input": "저는 췌장암이 있고 현재 항암치료중입니다. 제가 받을 수 있는 혜택이 궁금해요",
+            "rolling_summary": out.get("rolling_summary"),
+            "end_session": False,
+        },
+        config=cfg,
+    )
     print("answer2:", out2.get("answer"))
     print("messages_count:", len(out2.get("messages", [])))
     print("=== RUN 3  ===")
     out3 = app.invoke({
         "session_id": "sess-001",
         "profile_id": 76,
-        "user_input": "장애인 관련 지원사업 알려주세요.",
+        "user_input": "치매 관련 지원사업 알려주세요.",
         "rolling_summary": out.get("rolling_summary"),
         "end_session": False,
     }, config=cfg)

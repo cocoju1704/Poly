@@ -43,8 +43,8 @@
     background-color: white;
     padding: 16px;
     border-radius: 12px;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-    max-width: 70%;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    max-width: 80%;
 }
 
 .chat-bubble-assistant p {

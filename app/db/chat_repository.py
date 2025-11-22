@@ -151,10 +151,6 @@ def save_full_conversation(
                     record["created_at"],
                 ),
             )
-            
-        # 3-3. [제거] collections 테이블 저장 로직
-        # 이 로직은 LangGraph의 persist_pipeline 노드로 이동하여 처리하는 것이 더 적합합니다.
-        # chat_repository는 순수하게 대화 내용 저장에만 집중합니다.
 
         return conversation_id
 
