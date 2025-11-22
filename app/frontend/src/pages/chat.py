@@ -29,11 +29,13 @@ def _extract_policies_from_text(text: str):
     return None
 
 
-def handle_send_message(message: str):
-    if not message.strip() or st.session_state.get("is_loading", False):
+def handle_send_message(message: str, user_action: str = "none"):
+    if not message.strip() and user_action == "none":
         return
 
-    user_message = {
+    if not st.session_state.get("is_loading", False):
+        st.session_state["is_loading"] = True
+    user_message = {  # 11.21 user_action이 'save'일 때는 사용자 메시지를 추가하지 않도록 수정
         "id": str(uuid.uuid4()),
         "role": "user",
         "content": message,
@@ -41,13 +43,8 @@ def handle_send_message(message: str):
     }
     if "messages" not in st.session_state:
         st.session_state.messages = []
-    st.session_state.messages.append(user_message)
-
-    st.session_state["is_loading"] = True
-
-    active_profile = next(
-        (p for p in st.session_state.profiles if p.get("isActive", False)), None
-    )
+    if user_action != 'save':
+        st.session_state.messages.append(user_message)
 
     try:
         with st.spinner("답변 생성중..."):
@@ -57,6 +54,7 @@ def handle_send_message(message: str):
                 session_id=st.session_state.get("session_id"),  # 세션 ID 전달
                 token=token,  # 인증 토큰 전달
                 user_input=message,
+                user_action=user_action, # 'save' 액션 전달
                 profile_id=st.session_state.get("current_profile_id"),
             )
 
@@ -65,6 +63,13 @@ def handle_send_message(message: str):
             st.session_state["session_id"] = response.get(
                 "session_id"
             )  # 세션 ID 업데이트
+
+            # 'save' 액션 결과 처리
+            if user_action == "save":
+                if response.get("save_result") == "ok":
+                    st.toast("✅ 대화 내용이 저장되었습니다.", icon="💾")
+                else:
+                    st.toast("❌ 대화 저장에 실패했습니다.", icon="❌")
 
             # 디버그 정보 저장 (선택 사항)
             if "debug" in response:
@@ -175,23 +180,20 @@ def render_chatbot_main():
                 )
 
             elif message["role"] == "assistant":
-                # AI 응답 시작
+                # AI 응답 - 메시지 내용을 HTML 안에 직접 포함
                 st.markdown(
-                    """
+                    f"""
                     <div class="chat-message-assistant">
                         <div class="chat-avatar">AI</div>
                         <div style="flex: 1;">
                             <div class="chat-bubble-assistant">
+                                <p>{message["content"]}</p>
+                            </div>
                 """,
                     unsafe_allow_html=True,
                 )
 
-                # 메시지 내용
-                st.markdown(message["content"])
-
-                st.markdown("</div>", unsafe_allow_html=True)
-
-                # 정책 카드가 있으면 표시
+                # 정책 카드가 있으면 표시 (말풍선 밖에 표시)
                 if "policies" in message:
                     for policy in message["policies"]:
                         render_policy_card(policy)
@@ -271,11 +273,11 @@ def render_chatbot_main():
         with col_save:
             if st.button("💾 대화 저장", use_container_width=True):
                 # 기존: st.toast("대화 내용 저장 기능은 구현 예정입니다.") 또는 st.warning("로그인이 필요합니다.")
-                # 💡 [수정] 대화 저장 시도
+                # 💡 [수정] user_action='save'로 대화 저장 시도
                 if not st.session_state.get("auth_token"):
                     st.warning("로그인이 필요합니다.")
                 else:
-                    save_messages_to_backend()
+                    handle_send_message(message="대화 저장 요청", user_action="save")
 
         with col_reset:
             if st.button("🔄 초기화", use_container_width=True):

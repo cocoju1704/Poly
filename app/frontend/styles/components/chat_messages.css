@@ -43,12 +43,12 @@
     background-color: white;
     padding: 16px;
     border-radius: 12px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
     max-width: 70%;
 }
 
 .chat-bubble-assistant p {
-    margin: 0 0 12px 0;
+    margin: 0 0 0 0;
     font-size: 14px;
     line-height: 1.6;
 }

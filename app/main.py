@@ -5,7 +5,6 @@ import os
 
 load_dotenv()
 
-
 from fastapi import FastAPI
 from starlette.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
@@ -15,11 +14,22 @@ from app.db.database import initialize_db
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # 애플리케이션 시작 시
-    print("INFO:     애플리케이션 시작 - 데이터베이스 초기화를 시도합니다.")
-    initialize_db()
+    print("INFO:     애플리케이션 시작 - DB 초기화 조건 검사...")
+
+    # 🔥 로컬에서는 initialize_db() 실행 금지
+    #    서버에서는 ENV=production 일 때만 실행하도록 함
+    env = os.getenv("ENV", "local")
+
+    if env == "production":
+        print("INFO:     [PRODUCTION] initialize_db() 실행합니다.")
+        await initialize_db()  # ← 반드시 await
+    else:
+        print("INFO:     [LOCAL] initialize_db() 실행하지 않습니다.")
+
     yield
-    # 애플리케이션 종료 시 (필요 시 코드 추가)
+    # 종료 시 필요한 작업이 있으면 여기에 추가
+    print("INFO:     애플리케이션 종료.")
+
 
 app = FastAPI(
     title="HealthInformer API",
@@ -28,7 +38,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS 설정 추가 (Streamlit과 통신 위해)
+# CORS 설정
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -37,10 +47,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-# 사용자 및 채팅 API 라우터 추가
+# 라우터 설정
 app.include_router(user.router, prefix="/api/v1")
-app.include_router(chat.router, prefix="/api/v1")  # /api/v1/chat
+app.include_router(chat.router, prefix="/api/v1")
 
 
 if __name__ == "__main__":
