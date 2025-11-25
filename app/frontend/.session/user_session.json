@@ -1,0 +1,22 @@
+{
+  "user_info": {
+    "user_uuid": "c263923e-65b6-4649-b1fd-0c96e34ac5c9",
+    "userId": "newone123",
+    "main_profile_id": 98,
+    "created_at": "2025-11-18T17:32:51.816797+09:00",
+    "updated_at": "2025-11-21T14:10:48.524847+09:00",
+    "id": 98,
+    "name": "이영애",
+    "birth_date": "2002-01-25",
+    "sex": "M",
+    "residency_sgg_code": "관악구",
+    "median_income_ratio": 70.0,
+    "insurance_type": "DEPENDENT",
+    "basic_benefit_type": "NONE",
+    "disability_grade": null,
+    "ltci_grade": "G2",
+    "pregnant_or_postpartum12m": true
+  },
+  "auth_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuZXdvbmUxMjMiLCJleHAiOjE3NjM3MDM4OTR9.nnO6dwDnJbMVGtpDqYEhleb68RxSCfoZ1xF-YkavW-0",
+  "is_logged_in": true
+}
