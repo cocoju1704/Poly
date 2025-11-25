@@ -11,7 +11,6 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 conda install -c conda-forge faiss-gpu=1.8.0 cudatoolkit=11.8
 pip install beatyfulsoup4
 
-=======
 requirement 변경사항
 
 ```
@@ -57,3 +56,4 @@ pip install beatyfulsoup4
 수정 사항(11.19)
 pip uninstall google-generativeai
  pip install -r requirements.txt  
+![Agent Framework](http://dev.wyhil.com:43000/SG-OHA-2025-TEAM-02/HealthInformer/raw/branch/main/Pipeline-2025-11-12-082233.png)
